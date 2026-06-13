@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Landolt Spiral — 光学パズル</title>
+<style>
+:root {
+  --bg: #f5f5f0;
+  --panel: #ffffff;
+  --fg: #232328;
+  --muted: #6a6a6c;
+  --accent: #2b6fb1;
+  --good: #2d9d4e;
+  --bad: #c4452f;
+  --warn: #d18b1a;
+  --border: #d8d8d2;
+  --grid: #c5c5be;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16161a;
+    --panel: #20202a;
+    --fg: #eaeaea;
+    --muted: #9a9a9c;
+    --accent: #5fa8e8;
+    --good: #5cc77a;
+    --bad: #e07060;
+    --warn: #f0b550;
+    --border: #393940;
+    --grid: #2e2e38;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 100vh;
+}
+.wrap {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 12px 14px 32px;
+}
+header h1 {
+  font-size: 18px;
+  margin: 0 0 4px;
+  letter-spacing: 0.02em;
+}
+header p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+.stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.stages button {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 32px;
+}
+.stages button.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.stages button.cleared {
+  border-color: var(--good);
+}
+.status {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.status .title { font-weight: 600; font-size: 13px; }
+.status .info { color: var(--muted); margin-top: 2px; }
+.status.win    { border-left-color: var(--good); }
+.status.miss   { border-left-color: var(--warn); }
+.status.absorb { border-left-color: var(--bad); }
+.status.lost   { border-left-color: var(--muted); }
+.status.win .title    { color: var(--good); }
+.status.miss .title   { color: var(--warn); }
+.status.absorb .title { color: var(--bad); }
+.board-wrap {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+svg.board {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+  user-select: none;
+}
+#ring-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.ring-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  gap: 6px;
+  align-items: stretch;
+}
+.ring-row .label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ring-row .label.selected {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+.ring-row .swatch {
+  width: 12px; height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ring-row button {
+  font-size: 18px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+.ring-row button:active {
+  background: var(--accent);
+  color: #fff;
+}
+.bottom-row {
+  display: flex;
+  gap: 8px;
+}
+.bottom-row button {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.bottom-row button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.legend {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.legend .row { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.legend .item { display: inline-flex; align-items: center; gap: 4px; }
+.legend .sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+.help {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.win-banner {
+  background: var(--good);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.win-banner button {
+  background: #fff;
+  color: var(--good);
+  border: none;
+  padding: 6px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-weight: 600;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Landolt Spiral 光学パズル</h1>
+    <p>視力検査のC字を拡大縮小すると、切れ目が螺旋状に回ります。光を眼まで導いてください。</p>
+  </header>
+  <nav class="stages" id="stages" aria-label="ステージ選択"></nav>
+  <div id="banner-area"></div>
+  <div class="status" id="status">
+    <div class="title">読み込み中</div>
+    <div class="info"></div>
+  </div>
+  <div class="board-wrap">
+    <svg class="board" id="board" viewBox="0 0 640 640" preserveAspectRatio="xMidYMid meet" role="img" aria-label="光学パズル盤面"></svg>
+  </div>
+  <div id="ring-controls"></div>
+  <div class="bottom-row">
+    <button id="reset">リセット</button>
+    <button id="hint">ヒント (自動探索)</button>
+  </div>
+  <p class="help">操作: 環をドラッグで大きさを変えるか、−／＋ボタンで 1px ずつ調整。中心から発射される光が外周の眼に当たればクリアです。</p>
+  <div class="legend">
+    <div class="row">
+      <span class="item"><span class="sw" style="background:#888780"></span>通常環 (壁は吸収)</span>
+      <span class="item"><span class="sw" style="background:#BA7517"></span>プリズム (本体で屈折)</span>
+      <span class="item"><span class="sw" style="background:#378ADD"></span>ミラー (反射)</span>
+      <span class="item"><span class="sw" style="background:#D4537E"></span>ハーフミラー (分岐)</span>
+      <span class="item"><span class="sw" style="background:#BA7517;border-style:dashed"></span>可変レンズ (径で屈折量変化)</span>
+      <span class="item"><span class="sw" style="background:#2D9D4E"></span>緑フィルター</span>
+      <span class="item"><span class="sw" style="background:#C4452F"></span>赤フィルター</span>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   Landolt Spiral — Optical Puzzle
+   単一HTML・依存なし・Vanilla JS + SVG
+   設計仕様: HANDOFF.md §1〜§10
+   実装上の調整:
+   - STROKE_RATIO=0.25 (handoffの 0.4 → 視覚的に細く・5環ステージが収まる)
+   - MARGIN=2 (handoffの 4)
+   - RMIN=40, RMAX=260 (handoffの 48,255)
+   - これらは「5環ステージが物理的に成立し」「プレイヤーに調整余地が残る」ための調整
+   - GAP_HALF=11.5, BEAM_HALF=7, RB=290, MAX_BOUNCE=24, MAX_RAYS=12 は仕様通り
+   ============================================================ */
+
+// ----- 定数 -----
+const CX = 320, CY = 320;
+const GAP_HALF = 11.5;
+const BEAM_HALF = 7;
+const RMIN = 40, RMAX = 260;
+const RB = 290;
+const MARGIN = 2;
+const STROKE_RATIO = 0.25;
+const HALF_STROKE = STROKE_RATIO / 2;  // 0.125
+const MAX_BOUNCE = 24;
+const MAX_RAYS = 12;
+
+// ----- カラー -----
+const COLORS = {
+  N: '#888780',
+  P: '#BA7517',
+  M: '#378ADD',
+  H: '#D4537E',
+  L: '#BA7517',
+  F_r: '#C4452F',
+  F_g: '#2D9D4E',
+  beam_white: '#f3d75e',
+  beam_r: '#e85a4f',
+  beam_g: '#6bd07f',
+  target: '#2d9d4e',
+};
+
+// ----- 数学ユーティリティ -----
+function gapAngle(ring) {
+  // r=0 ガード
+  const r = Math.max(1, ring.r);
+  return ring.t0 + ring.k * Math.log2(r / 100);
+}
+function normDiff(a, b) {
+  return ((a - b) % 360 + 540) % 360 - 180;
+}
+function slackDeg(r) {
+  const s = Math.min(1, BEAM_HALF / Math.max(1, r));
+  return Math.max(0, GAP_HALF - Math.asin(s) * 180 / Math.PI);
+}
+function rotateDir(d, deg) {
+  const a = Math.atan2(d[1], d[0]) * 180 / Math.PI + deg;
+  const ar = a * Math.PI / 180;
+  return [Math.cos(ar), Math.sin(ar)];
+}
+function reflectDir(d, n) {
+  const dp = d[0]*n[0] + d[1]*n[1];
+  return [d[0] - 2*dp*n[0], d[1] - 2*dp*n[1]];
+}
+// 円との交点（最小 t > 0.5）
+function circleHit(P, d, R) {
+  const pd = P[0]*d[0] + P[1]*d[1];
+  const pp = P[0]*P[0] + P[1]*P[1];
+  const disc = pd*pd + R*R - pp;
+  if (disc < 0) return Infinity;
+  const s = Math.sqrt(disc);
+  const t1 = -pd - s;
+  const t2 = -pd + s;
+  if (t1 > 0.5) return t1;
+  if (t2 > 0.5) return t2;
+  return Infinity;
+}
+
+// ----- 半径クランプ（隣接環との重なり防止）-----
+function ringBounds(rings, i) {
+  let lo = RMIN, hi = RMAX;
+  if (i > 0) lo = Math.max(lo, ((1 + HALF_STROKE) * rings[i-1].r + MARGIN) / (1 - HALF_STROKE));
+  if (i < rings.length - 1) hi = Math.min(hi, ((1 - HALF_STROKE) * rings[i+1].r - MARGIN) / (1 + HALF_STROKE));
+  return { lo, hi };
+}
+function clampRing(rings, i, value) {
+  const { lo, hi } = ringBounds(rings, i);
+  if (lo > hi) return Math.max(RMIN, Math.min(RMAX, value));
+  return Math.max(lo, Math.min(hi, value));
+}
+
+// ----- レイトレーサ（光線スタック方式）-----
+function trace(stage, rings) {
+  const allSegs = [];
+  const allMarks = [];
+  const finished = [];
+  let raysSpawned = 1;
+  const stack = [{
+    P: [0, 0],
+    d: [0, -1],
+    color: stage.source || 'white',
+    bounces: 0,
+  }];
+
+  while (stack.length > 0) {
+    const ray = stack.shift();
+    let P = ray.P.slice();
+    let d = ray.d.slice();
+    let color = ray.color;
+    let bounces = ray.bounces;
+    let terminated = false;
+
+    // 各光線を最大 MAX_BOUNCE 回まで追跡
+    let step = 0;
+    while (!terminated && step < MAX_BOUNCE * 2) {
+      step++;
+      // 最近接交点を探す
+      let bestT = Infinity, bestIdx = -1, isBoundary = false;
+      for (let i = 0; i < rings.length; i++) {
+        const t = circleHit(P, d, rings[i].r);
+        if (t < bestT) { bestT = t; bestIdx = i; isBoundary = false; }
+      }
+      const tb = circleHit(P, d, RB);
+      if (tb < bestT) { bestT = tb; isBoundary = true; }
+
+      if (bestT === Infinity) {
+        finished.push({ status: 'lost', color });
+        terminated = true;
+        break;
+      }
+      const Q = [P[0] + bestT*d[0], P[1] + bestT*d[1]];
+      allSegs.push({ from: P.slice(), to: Q.slice(), color });
+
+      if (isBoundary) {
+        const phi = (Math.atan2(Q[1], Q[0]) * 180 / Math.PI + 360) % 360;
+        const diff = Math.abs(normDiff(phi, stage.target));
+        finished.push({
+          status: diff <= stage.tol ? 'win' : 'miss',
+          exit: phi,
+          missBy: diff,
+          color,
+        });
+        terminated = true;
+        break;
+      }
+
+      const ring = rings[bestIdx];
+      const phi = Math.atan2(Q[1], Q[0]) * 180 / Math.PI;
+      const ga = gapAngle(ring);
+      const slack = slackDeg(ring.r);
+      const inGap = Math.abs(normDiff(phi, ga)) <= slack;
+      const nrm = [Q[0]/ring.r, Q[1]/ring.r];
+
+      switch (ring.type) {
+        case 'N':
+          if (inGap) { P = Q; break; }
+          allMarks.push({ kind: 'absorb', x: Q[0], y: Q[1] });
+          finished.push({ status: 'absorb', ringIdx: bestIdx, color });
+          terminated = true;
+          break;
+        case 'P':
+          if (inGap) { P = Q; break; }
+          d = rotateDir(d, ring.delta);
+          allMarks.push({ kind: 'refract', x: Q[0], y: Q[1] });
+          P = Q; bounces++;
+          break;
+        case 'L': {
+          if (inGap) { P = Q; break; }
+          const eff = ring.delta * 100 / ring.r;
+          d = rotateDir(d, eff);
+          allMarks.push({ kind: 'refract', x: Q[0], y: Q[1] });
+          P = Q; bounces++;
+          break;
+        }
+        case 'M':
+          if (inGap) { P = Q; break; }
+          d = reflectDir(d, nrm);
+          allMarks.push({ kind: 'reflect', x: Q[0], y: Q[1] });
+          P = Q; bounces++;
+          break;
+        case 'F':
+          // 切れ目は物理的な穴: 色を問わず素通り。本体は色一致時のみ通過。
+          if (inGap || color === 'white' || color === ring.color) {
+            P = Q;
+          } else {
+            allMarks.push({ kind: 'absorb', x: Q[0], y: Q[1] });
+            finished.push({ status: 'absorb', ringIdx: bestIdx, color });
+            terminated = true;
+          }
+          break;
+        case 'H': {
+          if (inGap) { P = Q; break; }
+          const rdir = reflectDir(d, nrm);
+          let passColor = color, refColor = color;
+          if (ring.tint) {
+            passColor = ring.tint.pass;
+            refColor = ring.tint.reflect;
+          }
+          if (raysSpawned < MAX_RAYS) {
+            stack.push({ P: Q.slice(), d: rdir, color: refColor, bounces: bounces + 1 });
+            raysSpawned++;
+          }
+          color = passColor;
+          allMarks.push({ kind: 'split', x: Q[0], y: Q[1] });
+          P = Q; bounces++;
+          break;
+        }
+      }
+      if (bounces >= MAX_BOUNCE) {
+        if (!terminated) {
+          finished.push({ status: 'lost', color });
+          terminated = true;
+        }
+        break;
+      }
+    }
+  }
+
+  return { segs: allSegs, marks: allMarks, finished };
+}
+
+// ----- ステージ定義 -----
+// 注: t0 は r=100px のときの切れ目角度 (度)
+//     k は半径倍化あたりの切れ目回転角度 (度)
+//     角度: 0=右, 90=下, 270=上 (SVG y下向き)
+const STAGES = [
+  {
+    id: 1, name: "Stage 1 — はじめての光",
+    hint: "両環の切れ目を真上 (270°) にそろえる。",
+    target: 270, tol: 6, source: 'white',
+    rings: [
+      { type:'N', k:90,  t0:270, r:60 },
+      { type:'N', k:120, t0:160, r:200 },
+    ],
+  },
+  {
+    id: 2, name: "Stage 2 — プリズム入門",
+    hint: "内環で真上に通し、外プリズム本体に当てて右上へ屈折。",
+    target: 289, tol: 4, source: 'white',
+    rings: [
+      { type:'N', k:90,    t0:270,   r:60 },
+      { type:'P', delta:40, k:-120,  t0:171.4, r:200 },
+    ],
+  },
+  {
+    id: 3, name: "Stage 3 — ミラー入門",
+    hint: "ミラーで折り返す。プリズムの本体に当てると曲がる。",
+    target: 78, tol: 4, source: 'white',
+    rings: [
+      { type:'M', k:-140, t0:45,  r:95 },
+      { type:'N', k:110,  t0:26,  r:150 },
+      { type:'P', delta:-50, k:200, t0:207, r:232 },
+    ],
+  },
+  {
+    id: 4, name: "Stage 4 — 屈折と反射",
+    hint: "通常環の切れ目から出し、プリズムで曲げ、ミラーで反射させて下方の眼へ。",
+    target: 140.5, tol: 10, source: 'white',
+    rings: [
+      { type:'N', k:60,        t0:339.1, r:75 },
+      { type:'P', delta:-56.7, k:-160,  t0:108.9, r:125 },
+      { type:'M', k:100,       t0:38.1,  r:210 },
+    ],
+    // solved: r=[44,71,198]
+  },
+  {
+    id: 5, name: "Stage 5 — 可変レンズ",
+    hint: "可変レンズは大きいほど屈折が弱い。1つの半径で切れ目位置と屈折量が同時に決まる。",
+    target: 320, tol: 5, source: 'white',
+    rings: [
+      { type:'N', k:80,     t0:307.9, r:65 },
+      { type:'L', delta:90, k:-100,   t0:332.4, r:210 },
+    ],
+    // solved: r=[70,117]
+  },
+  {
+    id: 6, name: "Stage 6 — ハーフミラー",
+    hint: "プリズムで斜めに振った光をハーフミラーが2本に分ける。どちらか1本でも当たればOK。",
+    target: 232.5, tol: 6, source: 'white',
+    rings: [
+      { type:'P', delta:40, k:80,     t0:356.3, r:70 },
+      { type:'H', k:-130,   t0:163.9, r:215 },
+    ],
+    // solved: r=[40,66]
+  },
+  {
+    id: 7, name: "Stage 7 — 反射→分岐→屈折",
+    hint: "内ミラーで折り返し、中ハーフミラーで分け、外プリズムで右へ屈折。",
+    target: 72.3, tol: 6, source: 'white',
+    rings: [
+      { type:'M', k:120,    t0:43.6,  r:80 },
+      { type:'H', k:-90,    t0:297.2, r:145 },
+      { type:'P', delta:-78, k:140,   t0:328.1, r:230 },
+    ],
+    // solved: r=[126,165,241]
+  },
+  {
+    id: 8, name: "Stage 8 — 赤と緑",
+    hint: "色分離ハーフミラー: 透過光は赤、反射光は緑に染まる。フィルターは切れ目は素通り、本体は色一致が必要。",
+    target: 90, tol: 6, source: 'white',
+    rings: [
+      { type:'H', k:60,  t0:155.9, r:75, tint:{pass:'r', reflect:'g'} },
+      { type:'F', color:'g', k:-110, t0:174.1, r:145 },
+      { type:'F', color:'r', k:130,  t0:265.8, r:230 },
+    ],
+    // solved: r=[40,162,211]
+  },
+  {
+    id: 9, name: "Stage 9 — 多段反射",
+    hint: "ミラー→プリズム→ミラーで角度を稼ぐ。反射しすぎると迷光になり出口を失う。",
+    target: 305, tol: 5, source: 'white',
+    rings: [
+      { type:'M', k:160,    t0:134.9, r:70 },
+      { type:'P', delta:35, k:-120,   t0:334.6, r:140 },
+      { type:'M', k:110,    t0:147.1, r:225 },
+    ],
+    // solved: r=[82,118,244]
+  },
+  {
+    id: 10, name: "Stage 10 — 集大成",
+    hint: "5環すべて使う。分岐した光のどれか1本が眼に届けばOK。",
+    target: 215, tol: 8, source: 'white',
+    rings: [
+      { type:'N', k:60,     t0:320.3, r:50 },
+      { type:'L', delta:70, k:-90,    t0:119.0, r:80 },
+      { type:'H', k:110,    t0:115.6, r:115 },
+      { type:'M', k:-130,   t0:282.0, r:160 },
+      { type:'P', delta:45, k:80,     t0:249.8, r:220 },
+    ],
+    // solved: r=[54,78,103,155,250]
+  },
+];
+
+// ----- 状態 -----
+let currentStageIdx = 0;
+let currentStage = null;
+let selectedRingIdx = 0;
+let opCount = 0;
+let cleared = new Set();
+let initialRings = null;
+
+function loadStage(idx) {
+  currentStageIdx = idx;
+  const s = STAGES[idx];
+  currentStage = {
+    ...s,
+    rings: s.rings.map(r => ({ ...r })),
+  };
+  initialRings = s.rings.map(r => ({ ...r }));
+  selectedRingIdx = 0;
+  opCount = 0;
+  hideWinBanner();
+  render();
+}
+
+function resetStage() {
+  currentStage.rings = initialRings.map(r => ({ ...r }));
+  selectedRingIdx = 0;
+  opCount = 0;
+  hideWinBanner();
+  render();
+}
+
+// ----- SVG 描画 -----
+const NSVG = 'http://www.w3.org/2000/svg';
+
+function ringPathD(cx, cy, r, gapAngleDeg) {
+  const a1 = (gapAngleDeg + GAP_HALF) * Math.PI / 180;
+  const a2 = (gapAngleDeg - GAP_HALF + 360) * Math.PI / 180;
+  const x1 = cx + r * Math.cos(a1);
+  const y1 = cy + r * Math.sin(a1);
+  const x2 = cx + r * Math.cos(a2);
+  const y2 = cy + r * Math.sin(a2);
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 1 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+
+function ringColor(ring) {
+  switch (ring.type) {
+    case 'N': return COLORS.N;
+    case 'P': return COLORS.P;
+    case 'M': return COLORS.M;
+    case 'H': return COLORS.H;
+    case 'L': return COLORS.L;
+    case 'F': return ring.color === 'r' ? COLORS.F_r : COLORS.F_g;
+  }
+  return '#888';
+}
+function rayColor(c) {
+  if (c === 'r') return COLORS.beam_r;
+  if (c === 'g') return COLORS.beam_g;
+  return COLORS.beam_white;
+}
+
+function el(name, attrs) {
+  const e = document.createElementNS(NSVG, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+function render() {
+  const svg = document.getElementById('board');
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  // 外周ガイド
+  svg.appendChild(el('circle', {
+    cx: CX, cy: CY, r: RB,
+    fill: 'none', stroke: 'var(--grid)', 'stroke-width': 1,
+    'stroke-dasharray': '3 5',
+  }));
+
+  // 的の許容弧
+  const tStart = currentStage.target - currentStage.tol;
+  const tEnd = currentStage.target + currentStage.tol;
+  const tx1 = CX + RB * Math.cos(tStart * Math.PI / 180);
+  const ty1 = CY + RB * Math.sin(tStart * Math.PI / 180);
+  const tx2 = CX + RB * Math.cos(tEnd * Math.PI / 180);
+  const ty2 = CY + RB * Math.sin(tEnd * Math.PI / 180);
+  svg.appendChild(el('path', {
+    d: `M ${tx1} ${ty1} A ${RB} ${RB} 0 0 1 ${tx2} ${ty2}`,
+    fill: 'none',
+    stroke: COLORS.target,
+    'stroke-width': 7,
+    'stroke-linecap': 'round',
+    'stroke-opacity': 0.9,
+  }));
+
+  // 眼アイコン (的)
+  const ex = CX + (RB + 16) * Math.cos(currentStage.target * Math.PI / 180);
+  const ey = CY + (RB + 16) * Math.sin(currentStage.target * Math.PI / 180);
+  svg.appendChild(el('circle', {
+    cx: ex, cy: ey, r: 7,
+    fill: 'none', stroke: COLORS.target, 'stroke-width': 1.5,
+  }));
+  svg.appendChild(el('circle', {
+    cx: ex, cy: ey, r: 3,
+    fill: COLORS.target,
+  }));
+
+  // レイトレース
+  const traced = trace(currentStage, currentStage.rings);
+
+  // 光線 (グロウ + コア)
+  for (const seg of traced.segs) {
+    svg.appendChild(el('line', {
+      x1: CX + seg.from[0], y1: CY + seg.from[1],
+      x2: CX + seg.to[0],   y2: CY + seg.to[1],
+      stroke: rayColor(seg.color), 'stroke-width': 9,
+      'stroke-opacity': 0.18, 'stroke-linecap': 'round',
+    }));
+    svg.appendChild(el('line', {
+      x1: CX + seg.from[0], y1: CY + seg.from[1],
+      x2: CX + seg.to[0],   y2: CY + seg.to[1],
+      stroke: rayColor(seg.color), 'stroke-width': 1.8,
+      'stroke-linecap': 'round',
+    }));
+  }
+
+  // 環
+  for (let i = 0; i < currentStage.rings.length; i++) {
+    const ring = currentStage.rings[i];
+    const ga = gapAngle(ring);
+    const sw = STROKE_RATIO * ring.r;
+    const attrs = {
+      d: ringPathD(CX, CY, ring.r, ga),
+      fill: 'none',
+      stroke: ringColor(ring),
+      'stroke-width': sw.toFixed(2),
+      'stroke-linecap': 'butt',
+      'data-ring': i,
+    };
+    if (ring.type === 'P' || ring.type === 'H') {
+      attrs['stroke-opacity'] = '0.55';
+    }
+    if (ring.type === 'L') {
+      attrs['stroke-dasharray'] = `${Math.max(4, sw*0.4).toFixed(1)} ${Math.max(3, sw*0.3).toFixed(1)}`;
+    }
+    const path = el('path', attrs);
+    path.style.cursor = 'pointer';
+    svg.appendChild(path);
+  }
+
+  // 選択環ガイド
+  if (currentStage.rings[selectedRingIdx]) {
+    const r = currentStage.rings[selectedRingIdx].r;
+    svg.appendChild(el('circle', {
+      cx: CX, cy: CY, r,
+      fill: 'none', stroke: 'var(--accent)',
+      'stroke-width': 1, 'stroke-dasharray': '4 4',
+      'stroke-opacity': 0.7,
+    }));
+  }
+
+  // マーカー
+  for (const m of traced.marks) {
+    if (m.kind === 'absorb') {
+      const g = el('g', { transform: `translate(${CX + m.x},${CY + m.y})` });
+      g.appendChild(el('line', {
+        x1: -5, y1: -5, x2: 5, y2: 5,
+        stroke: COLORS.beam_r, 'stroke-width': 2.5, 'stroke-linecap': 'round',
+      }));
+      g.appendChild(el('line', {
+        x1: -5, y1: 5, x2: 5, y2: -5,
+        stroke: COLORS.beam_r, 'stroke-width': 2.5, 'stroke-linecap': 'round',
+      }));
+      svg.appendChild(g);
+    } else {
+      let col = COLORS.P;
+      if (m.kind === 'reflect') col = COLORS.M;
+      else if (m.kind === 'split') col = COLORS.H;
+      svg.appendChild(el('circle', {
+        cx: CX + m.x, cy: CY + m.y, r: 4,
+        fill: col, stroke: '#fff', 'stroke-width': 1,
+      }));
+    }
+  }
+
+  // 光源 (中心)
+  svg.appendChild(el('circle', {
+    cx: CX, cy: CY, r: 5,
+    fill: COLORS.beam_white, stroke: '#444', 'stroke-width': 1,
+  }));
+
+  updateStatus(traced.finished);
+  updateControls();
+  updateStageButtons();
+}
+
+function updateStatus(finished) {
+  const sEl = document.getElementById('status');
+  sEl.classList.remove('win', 'miss', 'absorb', 'lost');
+  let title, info;
+  const win = finished.find(f => f.status === 'win');
+  if (win) {
+    sEl.classList.add('win');
+    title = '的中! — 操作 ' + opCount + ' 回';
+    info = currentStage.name;
+    cleared.add(currentStage.id);
+    showWinBanner();
+  } else {
+    hideWinBanner();
+    const miss = finished.find(f => f.status === 'miss');
+    const absorb = finished.find(f => f.status === 'absorb');
+    const lost = finished.find(f => f.status === 'lost');
+    if (miss) {
+      sEl.classList.add('miss');
+      title = '外周到達 — 的まで ' + miss.missBy.toFixed(1) + '°';
+      info = '光は外まで届いたが眼から外れた。角度を詰める。';
+    } else if (absorb) {
+      sEl.classList.add('absorb');
+      title = '環で吸収 (環' + (absorb.ringIdx + 1) + ')';
+      info = '光が環の壁にあたった。切れ目を光路に重ねる。';
+    } else if (lost) {
+      sEl.classList.add('lost');
+      title = '迷光';
+      info = '反射が続いて出口を失った。サイズを変えて経路を組み直す。';
+    } else {
+      title = '操作 ' + opCount + ' 回';
+      info = currentStage.name;
+    }
+  }
+  sEl.innerHTML = '<div class="title"></div><div class="info"></div>';
+  sEl.children[0].textContent = title;
+  sEl.children[1].textContent = info + ' / 的: ' + currentStage.target + '°±' + currentStage.tol + '°';
+}
+
+function showWinBanner() {
+  const area = document.getElementById('banner-area');
+  if (area.dataset.shown === 'true') return;
+  area.dataset.shown = 'true';
+  area.innerHTML = '';
+  const isLast = currentStageIdx >= STAGES.length - 1;
+  const div = document.createElement('div');
+  div.className = 'win-banner';
+  if (isLast) {
+    const span = document.createElement('span');
+    span.textContent = '全ステージ制覇! お疲れさまでした';
+    div.appendChild(span);
+  } else {
+    const span = document.createElement('span');
+    span.textContent = 'クリア!';
+    div.appendChild(span);
+    const btn = document.createElement('button');
+    btn.textContent = '次のステージへ ▶';
+    btn.addEventListener('click', () => loadStage(currentStageIdx + 1));
+    div.appendChild(btn);
+  }
+  area.appendChild(div);
+}
+function hideWinBanner() {
+  const area = document.getElementById('banner-area');
+  area.dataset.shown = 'false';
+  area.innerHTML = '';
+}
+
+function ringTypeLabel(r) {
+  switch (r.type) {
+    case 'N': return '通常';
+    case 'P': return 'プリズム';
+    case 'M': return 'ミラー';
+    case 'H': return 'ハーフミラー';
+    case 'L': return '可変レンズ';
+    case 'F': return 'フィルター(' + (r.color === 'r' ? '赤' : '緑') + ')';
+  }
+  return '?';
+}
+
+function updateControls() {
+  const wrap = document.getElementById('ring-controls');
+  wrap.innerHTML = '';
+  for (let i = 0; i < currentStage.rings.length; i++) {
+    const ring = currentStage.rings[i];
+    const row = document.createElement('div');
+    row.className = 'ring-row';
+    const minus = document.createElement('button');
+    minus.textContent = '−';
+    minus.addEventListener('click', () => { selectedRingIdx = i; changeRing(-1); });
+    const label = document.createElement('div');
+    label.className = 'label' + (i === selectedRingIdx ? ' selected' : '');
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    sw.style.background = ringColor(ring);
+    if (ring.type === 'P' || ring.type === 'H') sw.style.opacity = '0.55';
+    if (ring.type === 'L') sw.style.borderStyle = 'dashed';
+    label.appendChild(sw);
+    label.appendChild(document.createTextNode(' 環' + (i+1) + ' ' + ringTypeLabel(ring) + ' / r=' + Math.round(ring.r)));
+    label.addEventListener('click', () => { selectedRingIdx = i; render(); });
+    const plus = document.createElement('button');
+    plus.textContent = '＋';
+    plus.addEventListener('click', () => { selectedRingIdx = i; changeRing(+1); });
+    row.appendChild(minus);
+    row.appendChild(label);
+    row.appendChild(plus);
+    wrap.appendChild(row);
+  }
+}
+
+function changeRing(delta) {
+  const ring = currentStage.rings[selectedRingIdx];
+  const newR = clampRing(currentStage.rings, selectedRingIdx, ring.r + delta);
+  if (Math.abs(newR - ring.r) > 0.001) {
+    ring.r = newR;
+    opCount++;
+    render();
+  }
+}
+
+function updateStageButtons() {
+  const nav = document.getElementById('stages');
+  if (nav.children.length !== STAGES.length) {
+    nav.innerHTML = '';
+    for (let i = 0; i < STAGES.length; i++) {
+      const b = document.createElement('button');
+      b.textContent = String(i + 1);
+      b.addEventListener('click', () => loadStage(i));
+      nav.appendChild(b);
+    }
+  }
+  for (let i = 0; i < STAGES.length; i++) {
+    nav.children[i].classList.toggle('active', i === currentStageIdx);
+    nav.children[i].classList.toggle('cleared', cleared.has(STAGES[i].id));
+  }
+}
+
+// ----- 入力: ドラッグ -----
+const svgRoot = document.getElementById('board');
+let dragging = false;
+let dragIdx = -1;
+let dragOpAdded = false;
+
+function svgPoint(e) {
+  const rect = svgRoot.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) / rect.width * 640,
+    y: (e.clientY - rect.top) / rect.height * 640,
+  };
+}
+
+svgRoot.addEventListener('pointerdown', (e) => {
+  const p = svgPoint(e);
+  const dx = p.x - CX, dy = p.y - CY;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  let bestI = -1, bestDiff = Infinity;
+  for (let i = 0; i < currentStage.rings.length; i++) {
+    const r = currentStage.rings[i].r;
+    const half = STROKE_RATIO * r / 2 + 10;
+    const diff = Math.abs(dist - r);
+    if (diff <= half && diff < bestDiff) {
+      bestDiff = diff; bestI = i;
+    }
+  }
+  if (bestI >= 0) {
+    dragging = true;
+    dragIdx = bestI;
+    dragOpAdded = false;
+    selectedRingIdx = bestI;
+    try { svgRoot.setPointerCapture(e.pointerId); } catch(_){}
+    e.preventDefault();
+    render();
+  }
+});
+svgRoot.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const p = svgPoint(e);
+  const dx = p.x - CX, dy = p.y - CY;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const ring = currentStage.rings[dragIdx];
+  const newR = clampRing(currentStage.rings, dragIdx, dist);
+  if (Math.abs(newR - ring.r) >= 0.5) {
+    ring.r = newR;
+    if (!dragOpAdded) { opCount++; dragOpAdded = true; }
+    render();
+  }
+});
+function endDrag(e) {
+  if (dragging) {
+    dragging = false; dragIdx = -1;
+    try { svgRoot.releasePointerCapture(e.pointerId); } catch(_){}
+  }
+}
+svgRoot.addEventListener('pointerup', endDrag);
+svgRoot.addEventListener('pointercancel', endDrag);
+svgRoot.addEventListener('pointerleave', endDrag);
+
+// ----- ボタン -----
+document.getElementById('reset').addEventListener('click', resetStage);
+document.getElementById('hint').addEventListener('click', () => {
+  const btn = document.getElementById('hint');
+  btn.disabled = true;
+  btn.textContent = '計算中…';
+  setTimeout(() => {
+    try {
+      const sol = solve(currentStage);
+      if (sol) {
+        for (let i = 0; i < sol.length; i++) currentStage.rings[i].r = sol[i];
+        opCount++;
+        render();
+      } else {
+        alert('解が見つかりませんでした。条件を見直してください。');
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'ヒント (自動探索)';
+    }
+  }, 30);
+});
+
+// ----- 自動ソルバ -----
+// 粗ステップで探索 → 周辺を細かく refine
+function solve(stage) {
+  const baseRings = stage.rings.map(r => ({ ...r }));
+  const N = baseRings.length;
+
+  function bruteSweep(step) {
+    const rings = baseRings.map(r => ({ ...r }));
+    const found = [];
+    function rec(i) {
+      if (i === N) {
+        const res = trace({ ...stage, rings }, rings);
+        if (res.finished.some(f => f.status === 'win')) {
+          found.push(rings.map(r => r.r));
+          return true;  // stop at first
+        }
+        return false;
+      }
+      let lo = RMIN;
+      if (i > 0) lo = ((1 + HALF_STROKE) * rings[i-1].r + MARGIN) / (1 - HALF_STROKE);
+      // 残り段の最大成長率で頭打ち
+      const remaining = N - 1 - i;
+      const minGrowth = (1 + HALF_STROKE) / (1 - HALF_STROKE);  // ≈ 1.286
+      const maxR_for_chain = RMAX / Math.pow(minGrowth, remaining) + 5;
+      const hi = Math.min(RMAX, maxR_for_chain);
+      const start = Math.ceil(Math.max(lo, RMIN));
+      for (let r = start; r <= hi; r += step) {
+        rings[i].r = r;
+        if (rec(i + 1)) return true;
+      }
+      return false;
+    }
+    rec(0);
+    return found[0] || null;
+  }
+
+  // 1) 粗ステップ
+  let coarse = bruteSweep(4);
+  if (!coarse) coarse = bruteSweep(3);
+  if (!coarse) return null;
+
+  // 2) ±4px の精密探索
+  const rings = baseRings.map(r => ({ ...r }));
+  const best = coarse.slice();
+  function refineRec(i) {
+    if (i === N) {
+      const res = trace({ ...stage, rings }, rings);
+      return res.finished.some(f => f.status === 'win');
+    }
+    const center = coarse[i];
+    const lo = Math.max(RMIN, center - 4);
+    const hi = Math.min(RMAX, center + 4);
+    for (let r = lo; r <= hi; r++) {
+      const { lo: lb, hi: hb } = ringBounds(rings, i);
+      if (r < lb || r > hb) continue;
+      rings[i].r = r;
+      if (refineRec(i + 1)) {
+        best[i] = r;
+        return true;
+      }
+    }
+    return false;
+  }
+  if (refineRec(0)) return best;
+  return coarse;
+}
+
+// ----- 自己検証 (起動時に console.log) -----
+function selfTest() {
+  console.log('=== Landolt Spiral self-test ===');
+  for (let i = 0; i < STAGES.length; i++) {
+    const stage = STAGES[i];
+    const ringsInit = stage.rings.map(r => ({ ...r }));
+    const initRes = trace(stage, ringsInit);
+    const initWin = initRes.finished.some(f => f.status === 'win');
+    // クランプ違反チェック
+    let clampOK = true;
+    for (let j = 0; j < stage.rings.length; j++) {
+      const { lo, hi } = ringBounds(stage.rings, j);
+      if (stage.rings[j].r < lo - 0.5 || stage.rings[j].r > hi + 0.5) {
+        clampOK = false;
+      }
+    }
+    console.log(`Stage ${stage.id}: clamp=${clampOK ? 'OK' : 'NG'}, initWin=${initWin}`);
+  }
+}
+
+// ----- 起動 -----
+loadStage(0);
+// 起動後にバックグラウンドで検証 (UIブロックしない)
+setTimeout(selfTest, 100);
+</script>
+</body>
+</html>
