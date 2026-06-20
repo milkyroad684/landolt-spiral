@@ -82,25 +82,6 @@ header p {
 .stages button.cleared {
   border-color: var(--good);
 }
-.status {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-left-width: 4px;
-  border-radius: 4px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-  font-size: 12px;
-  min-height: 76px;   /* メッセージの長さ(行数)が変わっても枠の高さを一定に保ち、盤面が上下にずれないようにする */
-}
-.status .title { font-weight: 600; font-size: 13px; }
-.status .info { color: var(--muted); margin-top: 2px; }
-.status.win    { border-left-color: var(--good); }
-.status.miss   { border-left-color: var(--warn); }
-.status.absorb { border-left-color: var(--bad); }
-.status.lost   { border-left-color: var(--muted); }
-.status.win .title    { color: var(--good); }
-.status.miss .title   { color: var(--warn); }
-.status.absorb .title { color: var(--bad); }
 .board-wrap {
   position: relative;
   background: var(--panel);
@@ -194,12 +175,19 @@ svg.board {
   font-size: 11px;
   color: var(--muted);
 }
+#banner-area {
+  position: absolute;       /* 盤面に重ねて表示し、出現してもレイアウト(盤面位置)をずらさない */
+  top: 8px; left: 8px; right: 8px;
+  z-index: 5;
+  pointer-events: none;     /* 空のときは盤面のドラッグを邪魔しない */
+}
 .win-banner {
+  pointer-events: auto;
   background: var(--good);
   color: #fff;
   padding: 10px 12px;
   border-radius: 4px;
-  margin-bottom: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -225,13 +213,9 @@ svg.board {
     <p>視力検査のC字を拡大縮小すると、切れ目が螺旋状に回ります。光を眼まで導いてください。</p>
   </header>
   <nav class="stages" id="stages" aria-label="ステージ選択"></nav>
-  <div id="banner-area"></div>
-  <div class="status" id="status">
-    <div class="title">読み込み中</div>
-    <div class="info"></div>
-  </div>
   <div class="board-wrap">
     <svg class="board" id="board" viewBox="0 0 640 640" preserveAspectRatio="xMidYMid meet" role="img" aria-label="光学パズル盤面"></svg>
+    <div id="banner-area"></div>
   </div>
   <div id="ring-controls"></div>
   <div class="bottom-row">
@@ -868,41 +852,14 @@ function render() {
 }
 
 function updateStatus(finished) {
-  const sEl = document.getElementById('status');
-  sEl.classList.remove('win', 'miss', 'absorb', 'lost');
-  let title, info;
+  // 判定メッセージ(タイトル/サブタイトル)は表示しない。クリア時のみ「クリア!」帯を出す。
   const win = finished.find(f => f.status === 'win');
   if (win) {
-    sEl.classList.add('win');
-    title = '的中! — 操作 ' + opCount + ' 回';
-    info = currentStage.name;
     cleared.add(currentStage.id);
     showWinBanner();
   } else {
     hideWinBanner();
-    const miss = finished.find(f => f.status === 'miss');
-    const absorb = finished.find(f => f.status === 'absorb');
-    const lost = finished.find(f => f.status === 'lost');
-    if (miss) {
-      sEl.classList.add('miss');
-      title = '外周到達 — 的まで ' + miss.missBy.toFixed(1) + '°';
-      info = '光は外まで届いたが眼から外れた。角度を詰める。';
-    } else if (absorb) {
-      sEl.classList.add('absorb');
-      title = '環で吸収 (環' + (absorb.ringIdx + 1) + ')';
-      info = '光が環の壁にあたった。切れ目を光路に重ねる。';
-    } else if (lost) {
-      sEl.classList.add('lost');
-      title = '迷光';
-      info = '反射が続いて出口を失った。サイズを変えて経路を組み直す。';
-    } else {
-      title = '操作 ' + opCount + ' 回';
-      info = currentStage.name;
-    }
   }
-  sEl.innerHTML = '<div class="title"></div><div class="info"></div>';
-  sEl.children[0].textContent = title;
-  sEl.children[1].textContent = info + ' / 的: ' + currentStage.target + '°±' + currentStage.tol + '°';
 }
 
 function showWinBanner() {
