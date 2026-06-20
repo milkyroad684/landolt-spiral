@@ -124,6 +124,10 @@ svg.board {
   border-color: var(--accent);
   outline: 1px solid var(--accent);
 }
+.ring-row .label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .ring-row .swatch {
   width: 12px; height: 12px;
   border-radius: 3px;
@@ -215,7 +219,7 @@ svg.board {
   <nav class="stages" id="stages" aria-label="ステージ選択"></nav>
   <div class="board-wrap">
     <svg class="board" id="board" viewBox="0 0 640 640" preserveAspectRatio="xMidYMid meet" role="img" aria-label="光学パズル盤面"></svg>
-    <div id="banner-area"></div>
+    <div id="banner-area" role="status" aria-live="polite"></div>
   </div>
   <div id="ring-controls"></div>
   <div class="bottom-row">
@@ -654,14 +658,25 @@ let opCount = 0;
 let cleared = new Set();
 let initialRings = null;
 
+// 環の複製。入れ子（gapOffsets / gapHalf 配列・tint オブジェクト）まで複製し、
+// currentStage と initialRings・STAGES が同じ配列/オブジェクトを共有しないようにする。
+// 現状は r しか書き換えないが、将来エディタ/自動生成で入れ子を触っても汚染しないため。
+function cloneRing(r) {
+  const c = { ...r };
+  if (Array.isArray(r.gapOffsets)) c.gapOffsets = r.gapOffsets.slice();
+  if (Array.isArray(r.gapHalf)) c.gapHalf = r.gapHalf.slice();
+  if (r.tint) c.tint = { ...r.tint };
+  return c;
+}
+
 function loadStage(idx) {
   currentStageIdx = idx;
   const s = STAGES[idx];
   currentStage = {
     ...s,
-    rings: s.rings.map(r => ({ ...r })),
+    rings: s.rings.map(cloneRing),
   };
-  initialRings = s.rings.map(r => ({ ...r }));
+  initialRings = s.rings.map(cloneRing);
   selectedRingIdx = 0;
   opCount = 0;
   hideWinBanner();
@@ -669,7 +684,7 @@ function loadStage(idx) {
 }
 
 function resetStage() {
-  currentStage.rings = initialRings.map(r => ({ ...r }));
+  currentStage.rings = initialRings.map(cloneRing);
   selectedRingIdx = 0;
   opCount = 0;
   hideWinBanner();
@@ -847,8 +862,16 @@ function render() {
   }));
 
   updateStatus(traced.finished);
-  updateControls();
+  refreshControls();
   updateStageButtons();
+}
+
+// ドラッグ中の再描画を 1 フレームに 1 回へ間引く（pointermove の連続発火で描き過ぎない）。
+let rafPending = false;
+function scheduleRender() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; render(); });
 }
 
 function updateStatus(finished) {
@@ -904,33 +927,68 @@ function ringTypeLabel(r) {
   return '?';
 }
 
-function updateControls() {
+// コントロール行は「ステージ読み込み時に一度だけ構築」し、以後は数値と選択状態のみ更新する。
+// ドラッグ中に毎フレーム innerHTML を作り直す無駄（モバイルでの追従低下）を避けるため。
+let controlsBuiltFor = -1;          // どのステージ用に行を構築済みか
+let controlRefs = [];               // [{labelEl, txtNode}] 各行の更新対象への参照
+
+function buildControls() {
   const wrap = document.getElementById('ring-controls');
   wrap.innerHTML = '';
+  controlRefs = [];
   for (let i = 0; i < currentStage.rings.length; i++) {
     const ring = currentStage.rings[i];
     const row = document.createElement('div');
     row.className = 'ring-row';
     const minus = document.createElement('button');
     minus.textContent = '−';
+    minus.setAttribute('aria-label', '環' + (i+1) + ' を小さく');
     minus.addEventListener('click', () => { selectedRingIdx = i; changeRing(-1); });
     const label = document.createElement('div');
-    label.className = 'label' + (i === selectedRingIdx ? ' selected' : '');
+    label.className = 'label';
+    label.setAttribute('role', 'button');
+    label.tabIndex = 0;                       // キーボードフォーカス可能
     const sw = document.createElement('span');
     sw.className = 'swatch';
-    sw.style.background = ringColor(ring);
+    sw.style.background = ringColor(ring);   // 環の種類は固定なので一度だけ設定
     if (ring.type === 'P' || ring.type === 'H') sw.style.opacity = '0.55';
     if (ring.type === 'L') sw.style.borderStyle = 'dashed';
+    const txtNode = document.createTextNode('');
     label.appendChild(sw);
-    label.appendChild(document.createTextNode(' 環' + (i+1) + ' ' + ringTypeLabel(ring) + ' / r=' + Math.round(ring.r)));
+    label.appendChild(txtNode);
     label.addEventListener('click', () => { selectedRingIdx = i; render(); });
+    // キーボード操作: Enter/Space で選択、上下(左右)キーで 1px ずつ拡大縮小。
+    label.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedRingIdx = i; render(); }
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); selectedRingIdx = i; changeRing(+1); }
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); selectedRingIdx = i; changeRing(-1); }
+    });
     const plus = document.createElement('button');
     plus.textContent = '＋';
+    plus.setAttribute('aria-label', '環' + (i+1) + ' を大きく');
     plus.addEventListener('click', () => { selectedRingIdx = i; changeRing(+1); });
     row.appendChild(minus);
     row.appendChild(label);
     row.appendChild(plus);
     wrap.appendChild(row);
+    controlRefs.push({ labelEl: label, txtNode });
+  }
+  controlsBuiltFor = currentStageIdx;
+}
+
+function refreshControls() {
+  if (controlsBuiltFor !== currentStageIdx || controlRefs.length !== currentStage.rings.length) {
+    buildControls();
+  }
+  for (let i = 0; i < currentStage.rings.length; i++) {
+    const ring = currentStage.rings[i];
+    const ref = controlRefs[i];
+    const desc = '環' + (i+1) + ' ' + ringTypeLabel(ring) + ' / r=' + Math.round(ring.r);
+    ref.txtNode.nodeValue = ' ' + desc;
+    const sel = i === selectedRingIdx;
+    ref.labelEl.classList.toggle('selected', sel);
+    ref.labelEl.setAttribute('aria-pressed', sel ? 'true' : 'false');
+    ref.labelEl.setAttribute('aria-label', desc + '。選択して上下キーで大きさを変更');
   }
 }
 
@@ -1010,7 +1068,7 @@ svgRoot.addEventListener('pointermove', (e) => {
   if (Math.abs(newR - ring.r) >= 0.5) {
     ring.r = newR;
     if (!dragOpAdded) { opCount++; dragOpAdded = true; }
-    render();
+    scheduleRender();   // フレーム単位に間引いて再描画
   }
 });
 function endDrag(e) {
@@ -1047,22 +1105,28 @@ document.getElementById('hint').addEventListener('click', () => {
 });
 
 // ----- 自動ソルバ -----
-// 粗ステップで探索 → 周辺を細かく refine
+// 「勝てる半径の組」を粗ステップで全部集め、最も素直な解
+// （本体での 屈折/反射/分岐 の回数 bodyHits が最小の解）を返す。
+// これにより、ヒントが跳ね回り(高バウンス)解ではなく意図された素直な経路を提示する。
 function solve(stage) {
   const baseRings = stage.rings.map(r => ({ ...r }));
   const N = baseRings.length;
 
-  function bruteSweep(step) {
+  function bodyHits(res) {
+    return res.marks.filter(m => m.kind === 'refract' || m.kind === 'reflect' || m.kind === 'split').length;
+  }
+
+  // step 刻みで全組み合わせを走査し、勝てた組を {r, bh} で集める。
+  function sweepWins(step) {
     const rings = baseRings.map(r => ({ ...r }));
-    const found = [];
+    const wins = [];
     function rec(i) {
       if (i === N) {
         const res = trace({ ...stage, rings }, rings);
         if (res.finished.some(f => f.status === 'win')) {
-          found.push(rings.map(r => r.r));
-          return true;  // stop at first
+          wins.push({ r: rings.map(r => r.r), bh: bodyHits(res) });
         }
-        return false;
+        return;
       }
       let lo = RMIN;
       if (i > 0) lo = ((1 + HALF_STROKE) * rings[i-1].r + MARGIN) / (1 - HALF_STROKE);
@@ -1074,63 +1138,78 @@ function solve(stage) {
       const start = Math.ceil(Math.max(lo, RMIN));
       for (let r = start; r <= hi; r += step) {
         rings[i].r = r;
-        if (rec(i + 1)) return true;
+        rec(i + 1);
       }
-      return false;
     }
     rec(0);
-    return found[0] || null;
+    return wins;
   }
 
-  // 1) 粗ステップ
-  let coarse = bruteSweep(4);
-  if (!coarse) coarse = bruteSweep(3);
-  if (!coarse) return null;
+  let wins = sweepWins(4);
+  if (!wins.length) wins = sweepWins(3);  // 粗4で無ければ粗3で再探索
+  if (!wins.length) return null;
 
-  // 2) ±4px の精密探索
-  const rings = baseRings.map(r => ({ ...r }));
-  const best = coarse.slice();
-  function refineRec(i) {
-    if (i === N) {
-      const res = trace({ ...stage, rings }, rings);
-      return res.finished.some(f => f.status === 'win');
-    }
-    const center = coarse[i];
-    const lo = Math.max(RMIN, center - 4);
-    const hi = Math.min(RMAX, center + 4);
-    for (let r = lo; r <= hi; r++) {
-      const { lo: lb, hi: hb } = ringBounds(rings, i);
-      if (r < lb || r > hb) continue;
-      rings[i].r = r;
-      if (refineRec(i + 1)) {
-        best[i] = r;
-        return true;
-      }
-    }
-    return false;
-  }
-  if (refineRec(0)) return best;
-  return coarse;
+  // 最も素直な解（bodyHits 最小）を選ぶ。粗探索の半径は整数で、その時点で
+  // 既に有効な勝ち手なので追加の精密化は不要。
+  wins.sort((a, b) => a.bh - b.bh);
+  return wins[0].r.slice();
 }
 
-// ----- 自己検証 (起動時に console.log) -----
+// ----- 自己検証 (起動時) -----
+// 各ステージが「壊れていない」ことを実検証する。検証項目:
+//   1. solvable     … solve() が解を見つけられる（クリア可能なステージである）
+//   2. notPreSolved … 初期状態ではクリアしていない（自明ステージでない）
+//   3. clampOK      … 初期半径がすべて可動域に収まっている（データ破損でない）
+// 必須3項目のいずれかが NG なら、開発環境(file:///localhost)に限り画面へ警告を出す。
+// 公開先（GitHub Pages 等）のプレイヤーには警告を出さない。
+// 同じ検証はコマンドラインの `node _verify_stages.mjs` でも公開前に実行できる。
 function selfTest() {
   console.log('=== Landolt Spiral self-test ===');
+  const failed = [];
   for (let i = 0; i < STAGES.length; i++) {
     const stage = STAGES[i];
     const ringsInit = stage.rings.map(r => ({ ...r }));
-    const initRes = trace(stage, ringsInit);
-    const initWin = initRes.finished.some(f => f.status === 'win');
-    // クランプ違反チェック
+    const initWin = trace(stage, ringsInit).finished.some(f => f.status === 'win');
     let clampOK = true;
     for (let j = 0; j < stage.rings.length; j++) {
       const { lo, hi } = ringBounds(stage.rings, j);
-      if (stage.rings[j].r < lo - 0.5 || stage.rings[j].r > hi + 0.5) {
-        clampOK = false;
-      }
+      if (stage.rings[j].r < lo - 0.5 || stage.rings[j].r > hi + 0.5) clampOK = false;
     }
-    console.log(`Stage ${stage.id}: clamp=${clampOK ? 'OK' : 'NG'}, initWin=${initWin}`);
+    let solvable = false;
+    try { solvable = !!solve(stage); } catch (e) { solvable = false; }
+
+    const ok = solvable && !initWin && clampOK;
+    const tags = [];
+    if (!solvable) tags.push('解なし');
+    if (initWin)   tags.push('初期クリア');
+    if (!clampOK)  tags.push('クランプ違反');
+    console.log(`Stage ${stage.id}: ${ok ? 'OK' : 'NG (' + tags.join(',') + ')'}`);
+    if (!ok) failed.push({ id: stage.id, tags });
   }
+  window.__selfTest = { failed, total: STAGES.length };
+  if (failed.length) {
+    console.error(`self-test FAIL: ${failed.length}/${STAGES.length} ステージに問題`, failed);
+    showDevWarning(failed);
+  } else {
+    console.log(`self-test PASS: 全 ${STAGES.length} ステージ健全`);
+  }
+}
+
+// 開発環境(file:///localhost)でのみ、壊れたステージの警告を画面に出す。
+function isDevEnv() {
+  const h = location.hostname;
+  return location.protocol === 'file:' || h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '';
+}
+function showDevWarning(failed) {
+  if (!isDevEnv()) return;  // 公開先では何も出さない
+  const box = document.createElement('div');
+  box.setAttribute('role', 'alert');
+  box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:9999;' +
+    'background:#c4452f;color:#fff;padding:10px 12px;border-radius:6px;font-size:12px;' +
+    'box-shadow:0 2px 10px rgba(0,0,0,.35);max-width:600px;margin:0 auto;';
+  const lines = failed.map(f => `Stage ${f.id}: ${f.tags.join(', ')}`).join(' / ');
+  box.textContent = `⚠ 自己検証 NG（開発環境のみ表示）: ${lines}`;
+  document.body.appendChild(box);
 }
 
 // ----- 起動 -----
