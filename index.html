@@ -301,9 +301,34 @@ function gapAngle(ring) {
 function normDiff(a, b) {
   return ((a - b) % 360 + 540) % 360 - 180;
 }
-function slackDeg(r) {
+function slackDeg(r, gapHalf) {
+  const gh = gapHalf == null ? GAP_HALF : gapHalf;
   const s = Math.min(1, BEAM_HALF / Math.max(1, r));
-  return Math.max(0, GAP_HALF - Math.asin(s) * 180 / Math.PI);
+  return Math.max(0, gh - Math.asin(s) * 180 / Math.PI);
+}
+// 切れ目の一覧を返す。各要素 {angle: 角度(度), half: 半角(度)}。
+//  ring.gapOffsets : 各切れ目の基準角からのオフセット(度) … 相対角度を自由指定
+//  ring.gaps       : 切れ目の個数（等間隔配置のショートカット）
+//  ring.gapHalf    : 数値=全切れ目共通の半角 / 配列=切れ目ごとの半角（未指定は GAP_HALF）
+// いずれも未指定なら従来どおり「半角 11.5 度・切れ目 1 個」。
+function gapList(ring) {
+  const base = gapAngle(ring);
+  let offsets;
+  if (Array.isArray(ring.gapOffsets)) {
+    offsets = ring.gapOffsets;
+  } else if (ring.gaps && ring.gaps > 1) {
+    offsets = [];
+    const sep = 360 / ring.gaps;
+    for (let i = 0; i < ring.gaps; i++) offsets.push(i * sep);
+  } else {
+    offsets = [0];
+  }
+  const halfOf = (i) => {
+    if (Array.isArray(ring.gapHalf)) return ring.gapHalf[i] == null ? GAP_HALF : ring.gapHalf[i];
+    if (ring.gapHalf != null) return ring.gapHalf;
+    return GAP_HALF;
+  };
+  return offsets.map((o, i) => ({ angle: base + o, half: halfOf(i) }));
 }
 function rotateDir(d, deg) {
   const a = Math.atan2(d[1], d[0]) * 180 / Math.PI + deg;
@@ -398,9 +423,8 @@ function trace(stage, rings) {
 
       const ring = rings[bestIdx];
       const phi = Math.atan2(Q[1], Q[0]) * 180 / Math.PI;
-      const ga = gapAngle(ring);
-      const slack = slackDeg(ring.r);
-      const inGap = Math.abs(normDiff(phi, ga)) <= slack;
+      // 複数の切れ目のいずれかに入っていれば「素通り」とみなす
+      const inGap = gapList(ring).some(g => Math.abs(normDiff(phi, g.angle)) <= slackDeg(ring.r, g.half));
       const nrm = [Q[0]/ring.r, Q[1]/ring.r];
 
       switch (ring.type) {
@@ -581,6 +605,29 @@ const STAGES = [
     ],
     // solved: r=[54,78,103,155,250]
   },
+  {
+    id: 11, name: "Stage 11 — 切れ目デモ（複数切れ目・可変幅）",
+    hint: "外環には切れ目が2つ（幅も角度差も自由）。内環の切れ目と外環のどちらかの切れ目を、真上(270°)に重ねて光を通す。",
+    target: 270, tol: 8, source: 'white',
+    rings: [
+      { type:'N', k:90,   t0:316.3, r:55 },
+      // 外環: 切れ目2個。基準角から 0° と 130° に配置（等間隔ではない）、
+      //       幅も 20° と 8° で別々（gapHalf を配列で指定）。
+      { type:'N', k:-120, t0:260,   r:200, gapOffsets:[0, 130], gapHalf:[20, 8] },
+    ],
+    // solved: r=[68,90], exit=270.0°（外環は幅20°の切れ目で270°を通す解）
+  },
+  {
+    id: 12, name: "Stage 12 — 二重ランドルト環（上級）",
+    hint: "内環は切れ目が2つ（60°差）。どちらかの切れ目を真上に通し、外プリズムの“本体”に当てて右下の眼(320°)へ屈折させる。プリズムの切れ目に逃がすと曲がらない。",
+    target: 320, tol: 4, source: 'white',
+    rings: [
+      // 二重ランドルト環: 切れ目2個を 60° 差で配置。r≈60 と r≈100 の二通りで真上を通せる。
+      { type:'N', k:80,     t0:270, r:55, gapOffsets:[0, 60], gapHalf:[14, 14] },
+      { type:'P', delta:72, k:-110, t0:30, r:200 },
+    ],
+    // solved: r=[60,96], exit=323.6°（内環は2つ目の切れ目で270°を通し、プリズム本体で屈折）
+  },
 ];
 
 // ----- 状態 -----
@@ -616,14 +663,25 @@ function resetStage() {
 // ----- SVG 描画 -----
 const NSVG = 'http://www.w3.org/2000/svg';
 
-function ringPathD(cx, cy, r, gapAngleDeg) {
-  const a1 = (gapAngleDeg + GAP_HALF) * Math.PI / 180;
-  const a2 = (gapAngleDeg - GAP_HALF + 360) * Math.PI / 180;
-  const x1 = cx + r * Math.cos(a1);
-  const y1 = cy + r * Math.sin(a1);
-  const x2 = cx + r * Math.cos(a2);
-  const y2 = cy + r * Math.sin(a2);
-  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 1 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+function ringPathD(cx, cy, r, gaps) {
+  // gaps: [{angle, half}, ...]（度）。切れ目の隙間を除いた弧をすべて描く。
+  const gs = gaps.map(g => ({ a: ((g.angle % 360) + 360) % 360, h: g.half })).sort((x, y) => x.a - y.a);
+  let d = '';
+  for (let i = 0; i < gs.length; i++) {
+    const cur = gs[i];
+    const next = gs[(i + 1) % gs.length];
+    const start = cur.a + cur.h;             // この切れ目の終わり
+    let end = next.a - next.h;               // 次の切れ目の始まり
+    if (i === gs.length - 1) end += 360;      // 一周ぶん回り込む
+    const sweep = end - start;
+    if (sweep <= 0) continue;                 // 切れ目が重なる場合はその弧を描かない
+    const a1 = start * Math.PI / 180, a2 = end * Math.PI / 180;
+    const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+    const x2 = cx + r * Math.cos(a2), y2 = cy + r * Math.sin(a2);
+    const large = sweep > 180 ? 1 : 0;
+    d += `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} `;
+  }
+  return d.trim();
 }
 
 function ringColor(ring) {
@@ -710,10 +768,9 @@ function render() {
   // 環
   for (let i = 0; i < currentStage.rings.length; i++) {
     const ring = currentStage.rings[i];
-    const ga = gapAngle(ring);
     const sw = STROKE_RATIO * ring.r;
     const attrs = {
-      d: ringPathD(CX, CY, ring.r, ga),
+      d: ringPathD(CX, CY, ring.r, gapList(ring)),
       fill: 'none',
       stroke: ringColor(ring),
       'stroke-width': sw.toFixed(2),
