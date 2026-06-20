@@ -2,8 +2,15 @@
 .claude/
 
 # Internal dev / verification artifacts (not for public repo)
-_*.js
-_*.ps1
+_*
+
+# Design / handoff docs and work logs (not for public repo)
+HANDOFF.md
+tasks/
+
+# Backups
+*.bak
+*.bak2
 
 # OS
 Thumbs.db

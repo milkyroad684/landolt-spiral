@@ -242,6 +242,7 @@ svg.board {
       <span class="item"><span class="sw" style="background:#888780"></span>通常環 (壁は吸収)</span>
       <span class="item"><span class="sw" style="background:#BA7517"></span>プリズム (本体で屈折)</span>
       <span class="item"><span class="sw" style="background:#378ADD"></span>ミラー (反射)</span>
+      <span class="item"><span class="sw" style="background:#1FA8A0"></span>片面ミラー (外面は反射・内面は吸収)</span>
       <span class="item"><span class="sw" style="background:#D4537E"></span>ハーフミラー (分岐)</span>
       <span class="item"><span class="sw" style="background:#BA7517;border-style:dashed"></span>可変レンズ (径で屈折量変化)</span>
       <span class="item"><span class="sw" style="background:#2D9D4E"></span>緑フィルター</span>
@@ -282,6 +283,7 @@ const COLORS = {
   N: '#888780',
   P: '#BA7517',
   M: '#378ADD',
+  O: '#1FA8A0',
   H: '#D4537E',
   L: '#BA7517',
   F_r: '#C4452F',
@@ -454,6 +456,22 @@ function trace(stage, rings) {
           allMarks.push({ kind: 'reflect', x: Q[0], y: Q[1] });
           P = Q; bounces++;
           break;
+        case 'O':
+          // 片面ミラー: 外側の面=鏡(反射) / 内側の面=吸収 / 切れ目=素通り。
+          // 法線 nrm は中心から外向き。光の進行方向 d との内積で当たった面を判定する。
+          if (inGap) { P = Q; break; }
+          if (d[0]*nrm[0] + d[1]*nrm[1] < 0) {
+            // 内向きに進んで当たった = 外面に当たった → 反射
+            d = reflectDir(d, nrm);
+            allMarks.push({ kind: 'reflect', x: Q[0], y: Q[1] });
+            P = Q; bounces++;
+          } else {
+            // 外向きに進んで当たった = 内面に当たった → 吸収
+            allMarks.push({ kind: 'absorb', x: Q[0], y: Q[1] });
+            finished.push({ status: 'absorb', ringIdx: bestIdx, color });
+            terminated = true;
+          }
+          break;
         case 'F':
           // 切れ目は物理的な穴: 色を問わず素通り。本体は色一致時のみ通過。
           if (inGap || color === 'white' || color === ring.color) {
@@ -530,14 +548,14 @@ const STAGES = [
   },
   {
     id: 4, name: "Stage 4 — 屈折と反射",
-    hint: "通常環の切れ目から出し、プリズムで曲げ、ミラーで反射させて下方の眼へ。",
-    target: 140.5, tol: 10, source: 'white',
+    hint: "内側のミラーで光を折り返し、プリズムで曲げて、外環の切れ目から眼へ通す。",
+    target: 69.1, tol: 10, source: 'white',
     rings: [
-      { type:'N', k:60,        t0:339.1, r:75 },
-      { type:'P', delta:-56.7, k:-160,  t0:108.9, r:125 },
-      { type:'M', k:100,       t0:38.1,  r:210 },
+      { type:'M', k:110,       t0:169.0, r:78,  gapHalf:16 },
+      { type:'P', delta:-30.5, k:-130,  t0:326.8, r:130, gapHalf:16 },
+      { type:'N', k:70,        t0:20.6,  r:210, gapHalf:16 },
     ],
-    // solved: r=[44,71,198]
+    // solved: r=[61,105,167]（内ミラーで折返し→プリズム本体で屈折→外環の切れ目から眼）
   },
   {
     id: 5, name: "Stage 5 — 可変レンズ",
@@ -583,14 +601,14 @@ const STAGES = [
   },
   {
     id: 9, name: "Stage 9 — 多段反射",
-    hint: "ミラー→プリズム→ミラーで角度を稼ぐ。反射しすぎると迷光になり出口を失う。",
-    target: 305, tol: 5, source: 'white',
+    hint: "内プリズムで斜めに振り、2枚のミラーで反射して角度を稼ぎ、外ミラーの切れ目から眼へ。",
+    target: 204.7, tol: 10, source: 'white',
     rings: [
-      { type:'M', k:160,    t0:134.9, r:70 },
-      { type:'P', delta:35, k:-120,   t0:334.6, r:140 },
-      { type:'M', k:110,    t0:147.1, r:225 },
+      { type:'P', delta:-51.7, k:-130, t0:242.1, r:60,  gapHalf:16 },
+      { type:'M', k:110,       t0:216.6, r:120, gapHalf:16 },
+      { type:'M', k:110,       t0:62.0,  r:200, gapHalf:16 },
     ],
-    // solved: r=[82,118,244]
+    // solved: r=[66,112,253]（内プリズムで屈折→ミラー2枚で反射→外ミラーの切れ目から眼）
   },
   {
     id: 10, name: "Stage 10 — 集大成",
@@ -627,6 +645,18 @@ const STAGES = [
       { type:'P', delta:72, k:-110, t0:30, r:200 },
     ],
     // solved: r=[60,96], exit=323.6°（内環は2つ目の切れ目で270°を通し、プリズム本体で屈折）
+  },
+  {
+    id: 13, name: "Stage 13 — 片面ミラー（外面だけ鏡）",
+    hint: "最内環は外面だけが鏡（内面は吸収）。プリズムで曲げ→外ミラーで折り返し→プリズムの切れ目→片面ミラーの外面で反射→プリズムと外ミラーの切れ目を抜けて右下の眼へ。",
+    target: 336.5, tol: 8, source: 'white',
+    rings: [
+      { type:'O', k:-70,    t0:226.5, r:80,  gapHalf:12 },
+      { type:'P', delta:20, k:130,    t0:-94.1, r:134, gapOffsets:[0, 33.7], gapHalf:12 },
+      { type:'M', k:-160,   t0:166.7, r:240, gapHalf:12 },
+    ],
+    // solved: r=[65,114,230], exit=336.5°
+    //   光路: O切れ目→P本体で屈折→M本体で反射→P切れ目→O外面で反射→P切れ目→M切れ目→眼（本体3回・素直な道）
   },
 ];
 
@@ -689,6 +719,7 @@ function ringColor(ring) {
     case 'N': return COLORS.N;
     case 'P': return COLORS.P;
     case 'M': return COLORS.M;
+    case 'O': return COLORS.O;
     case 'H': return COLORS.H;
     case 'L': return COLORS.L;
     case 'F': return ring.color === 'r' ? COLORS.F_r : COLORS.F_g;
@@ -906,6 +937,7 @@ function ringTypeLabel(r) {
     case 'N': return '通常';
     case 'P': return 'プリズム';
     case 'M': return 'ミラー';
+    case 'O': return '片面ミラー';
     case 'H': return 'ハーフミラー';
     case 'L': return '可変レンズ';
     case 'F': return 'フィルター(' + (r.color === 'r' ? '赤' : '緑') + ')';
