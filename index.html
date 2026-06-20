@@ -33,6 +33,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+html { scrollbar-gutter: stable; }   /* スクロールバーの幅を常に確保し、出現/消失で盤面幅が変わらないようにする */
 body {
   background: var(--bg);
   color: var(--fg);
@@ -89,6 +90,7 @@ header p {
   padding: 8px 10px;
   margin-bottom: 8px;
   font-size: 12px;
+  min-height: 76px;   /* メッセージの長さ(行数)が変わっても枠の高さを一定に保ち、盤面が上下にずれないようにする */
 }
 .status .title { font-weight: 600; font-size: 13px; }
 .status .info { color: var(--muted); margin-top: 2px; }
@@ -1007,9 +1009,10 @@ const svgRoot = document.getElementById('board');
 let dragging = false;
 let dragIdx = -1;
 let dragOpAdded = false;
+let dragRect = null;   // ドラッグ開始時の盤面位置を保持し、ドラッグ中は測り直さない
 
-function svgPoint(e) {
-  const rect = svgRoot.getBoundingClientRect();
+function svgPoint(e, rect) {
+  rect = rect || svgRoot.getBoundingClientRect();
   return {
     x: (e.clientX - rect.left) / rect.width * 640,
     y: (e.clientY - rect.top) / rect.height * 640,
@@ -1037,11 +1040,12 @@ svgRoot.addEventListener('pointerdown', (e) => {
     try { svgRoot.setPointerCapture(e.pointerId); } catch(_){}
     e.preventDefault();
     render();
+    dragRect = svgRoot.getBoundingClientRect();   // 再描画後の位置を1回だけ測り、ドラッグ中は固定して使う
   }
 });
 svgRoot.addEventListener('pointermove', (e) => {
   if (!dragging) return;
-  const p = svgPoint(e);
+  const p = svgPoint(e, dragRect);
   const dx = p.x - CX, dy = p.y - CY;
   const dist = Math.sqrt(dx*dx + dy*dy);
   const ring = currentStage.rings[dragIdx];
@@ -1054,7 +1058,7 @@ svgRoot.addEventListener('pointermove', (e) => {
 });
 function endDrag(e) {
   if (dragging) {
-    dragging = false; dragIdx = -1;
+    dragging = false; dragIdx = -1; dragRect = null;
     try { svgRoot.releasePointerCapture(e.pointerId); } catch(_){}
   }
 }
