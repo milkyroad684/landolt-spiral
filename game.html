@@ -484,8 +484,8 @@ const STAGES = [
     hint: "両環の切れ目を真上 (270°) にそろえる。",
     target: 270, tol: 6, source: 'white',
     rings: [
-      { type:'AA', k:90,  t0:270, r:60 },
-      { type:'AA', k:120, t0:160, r:200 },
+      { type:'AA', k:90,  t0:270, r:40 },
+      { type:'AA', k:120, t0:160, r:54 },
     ],
   },
   {
@@ -493,8 +493,8 @@ const STAGES = [
     hint: "内環で真上に通し、外プリズム本体に当てて右上へ屈折。",
     target: 289, tol: 4, source: 'white',
     rings: [
-      { type:'AA', k:90,    t0:270,   r:60 },
-      { type:'PP', delta:40, k:-120,  t0:171.4, r:200 },
+      { type:'AA', k:90,    t0:270,   r:199 },
+      { type:'PP', delta:40, k:-120,  t0:171.4, r:259 },
     ],
   },
   {
@@ -502,9 +502,9 @@ const STAGES = [
     hint: "ミラーで折り返す。プリズムの本体に当てると曲がる。",
     target: 78, tol: 4, source: 'white',
     rings: [
-      { type:'MM', k:-140, t0:45,  r:95 },
-      { type:'AA', k:110,  t0:26,  r:150 },
-      { type:'PP', delta:-50, k:200, t0:207, r:232 },
+      { type:'MM', k:-140, t0:45,  r:40 },
+      { type:'AA', k:110,  t0:26,  r:54 },
+      { type:'PP', delta:-50, k:200, t0:207, r:72 },
     ],
   },
   {
@@ -512,9 +512,9 @@ const STAGES = [
     hint: "内側のミラーで光を折り返し、プリズムで曲げて、外環の切れ目から眼へ通す。",
     target: 69.1, tol: 10, source: 'white',
     rings: [
-      { type:'MM', k:110,       t0:169.0, r:78,  gapHalf:16 },
-      { type:'PP', delta:-30.5, k:-130,  t0:326.8, r:130, gapHalf:16 },
-      { type:'AA', k:70,        t0:20.6,  r:210, gapHalf:16 },
+      { type:'MM', k:110,       t0:169.0, r:152, gapHalf:16 },
+      { type:'PP', delta:-30.5, k:-130,  t0:326.8, r:198, gapHalf:16 },
+      { type:'AA', k:70,        t0:20.6,  r:257, gapHalf:16 },
     ],
     // solved: r=[61,105,167]（内ミラーで折返し→プリズム本体で屈折→外環の切れ目から眼）
   },
@@ -523,8 +523,8 @@ const STAGES = [
     hint: "プリズムで曲げた光を、外側のミラーで反射させて眼へ届ける。",
     target: 75.6, tol: 8,
     rings: [
-      { type:'PP', delta:-27.8, k:-80, t0:323.3, r:42, gapHalf:16 },
-      { type:'MM', k:-90, t0:188.5, r:58, gapHalf:16 },
+      { type:'PP', delta:-27.8, k:-80, t0:323.3, r:40, gapHalf:16 },
+      { type:'MM', k:-90, t0:188.5, r:54, gapHalf:16 },
     ],
     // solved: r=[164,230]（プリズムで屈折→ミラーで反射→眼）
   },
@@ -533,9 +533,9 @@ const STAGES = [
     hint: "プリズムで曲げ、2枚のミラーで反射をつないで角度を作る。",
     target: 349.4, tol: 8,
     rings: [
-      { type:'PP', delta:69.4, k:-80, t0:334.2, r:59, gapHalf:16 },
-      { type:'MM', k:-110, t0:6.9, r:140, gapHalf:16 },
-      { type:'MM', k:110, t0:205.1, r:226, gapHalf:16 },
+      { type:'PP', delta:69.4, k:-80, t0:334.2, r:40, gapHalf:16 },
+      { type:'MM', k:-110, t0:6.9, r:54, gapHalf:16 },
+      { type:'MM', k:110, t0:205.1, r:72, gapHalf:16 },
     ],
     // solved: r=[85,152,243]（プリズム→ミラー→ミラー）
   },
@@ -544,9 +544,9 @@ const STAGES = [
     hint: "片面ミラーは外側の面だけが鏡（内面は吸収・切れ目は素通り）。プリズムで曲げ、外のミラーで折り返して片面ミラーの外面に当てる。",
     target: 359.3, tol: 8,
     rings: [
-      { type:'PP', delta:75.3, k:80, t0:232.3, r:135, gapHalf:14 },
-      { type:'AM', k:-70, t0:339.2, r:183, gapHalf:14 },
-      { type:'MM', k:90, t0:248, r:259, gapHalf:14 },
+      { type:'PP', delta:75.3, k:80, t0:232.3, r:40, gapHalf:14 },
+      { type:'AM', k:-70, t0:339.2, r:54, gapHalf:14 },
+      { type:'MM', k:90, t0:248, r:72, gapHalf:14 },
     ],
     // solved: r=[75,134,230]（プリズム→片面ミラー外面で反射→ミラー）
   },
@@ -555,10 +555,10 @@ const STAGES = [
     hint: "プリズムで曲げ、3枚のミラーで反射をつなぐ。各環の切れ目と本体の当てどころを合わせる。",
     target: 50.8, tol: 8,
     rings: [
-      { type:'PP', delta:-25.6, k:130, t0:146.4, r:67, gapHalf:12 },
-      { type:'MM', k:-120, t0:76.8, r:101, gapHalf:12 },
-      { type:'MM', k:90, t0:0.2, r:168, gapHalf:12 },
-      { type:'MM', k:-120, t0:211.4, r:227, gapHalf:12 },
+      { type:'PP', delta:-25.6, k:130, t0:146.4, r:40, gapHalf:12 },
+      { type:'MM', k:-120, t0:76.8, r:54, gapHalf:12 },
+      { type:'MM', k:90, t0:0.2, r:72, gapHalf:12 },
+      { type:'MM', k:-120, t0:211.4, r:95, gapHalf:12 },
     ],
     // solved: r=[76,112,165,233]
   },
@@ -567,9 +567,9 @@ const STAGES = [
     hint: "内プリズムで斜めに振り、2枚のミラーで反射して角度を稼ぎ、外ミラーの切れ目から眼へ。",
     target: 204.7, tol: 10, source: 'white',
     rings: [
-      { type:'PP', delta:-51.7, k:-130, t0:242.1, r:60,  gapHalf:16 },
-      { type:'MM', k:110,       t0:216.6, r:120, gapHalf:16 },
-      { type:'MM', k:110,       t0:62.0,  r:200, gapHalf:16 },
+      { type:'PP', delta:-51.7, k:-130, t0:242.1, r:40,  gapHalf:16 },
+      { type:'MM', k:110,       t0:216.6, r:54, gapHalf:16 },
+      { type:'MM', k:110,       t0:62.0,  r:72, gapHalf:16 },
     ],
     // solved: r=[66,112,253]（内プリズムで屈折→ミラー2枚で反射→外ミラーの切れ目から眼）
   },
@@ -578,11 +578,11 @@ const STAGES = [
     hint: "5環すべてを使う。プリズムで曲げ、4枚のミラーで反射をつないで眼へ。",
     target: 209.3, tol: 8,
     rings: [
-      { type:'PP', delta:-41.7, k:-110, t0:48.4, r:69, gapHalf:11 },
-      { type:'MM', k:90, t0:253, r:99, gapHalf:11 },
-      { type:'MM', k:-120, t0:272.9, r:145, gapHalf:11 },
-      { type:'MM', k:110, t0:112.3, r:189, gapHalf:11 },
-      { type:'MM', k:-90, t0:332.2, r:258, gapHalf:11 },
+      { type:'PP', delta:-41.7, k:-110, t0:48.4, r:40, gapHalf:11 },
+      { type:'MM', k:90, t0:253, r:54, gapHalf:11 },
+      { type:'MM', k:-120, t0:272.9, r:72, gapHalf:11 },
+      { type:'MM', k:110, t0:112.3, r:95, gapHalf:11 },
+      { type:'MM', k:-90, t0:332.2, r:125, gapHalf:11 },
     ],
     // solved: r=[61,102,141,191,248]
   },
@@ -591,10 +591,10 @@ const STAGES = [
     hint: "外環には切れ目が2つ（幅も角度差も自由）。内環の切れ目と外環のどちらかの切れ目を、真上(270°)に重ねて光を通す。",
     target: 270, tol: 8, source: 'white',
     rings: [
-      { type:'AA', k:90,   t0:316.3, r:55 },
+      { type:'AA', k:90,   t0:316.3, r:199 },
       // 外環: 切れ目2個。基準角から 0° と 130° に配置（等間隔ではない）、
       //       幅も 20° と 8° で別々（gapHalf を配列で指定）。
-      { type:'AA', k:-120, t0:260,   r:200, gapOffsets:[0, 130], gapHalf:[20, 8] },
+      { type:'AA', k:-120, t0:260,   r:259, gapOffsets:[0, 130], gapHalf:[20, 8] },
     ],
     // solved: r=[68,90], exit=270.0°（外環は幅20°の切れ目で270°を通す解）
   },
@@ -604,8 +604,8 @@ const STAGES = [
     target: 320, tol: 4, source: 'white',
     rings: [
       // 二重ランドルト環: 切れ目2個を 60° 差で配置。r≈60 と r≈100 の二通りで真上を通せる。
-      { type:'AA', k:80,     t0:270, r:55, gapOffsets:[0, 60], gapHalf:[14, 14] },
-      { type:'PP', delta:72, k:-110, t0:30, r:200 },
+      { type:'AA', k:80,     t0:270, r:199, gapOffsets:[0, 60], gapHalf:[14, 14] },
+      { type:'PP', delta:72, k:-110, t0:30, r:259 },
     ],
     // solved: r=[60,96], exit=323.6°（内環は2つ目の切れ目で270°を通し、プリズム本体で屈折）
   },
@@ -614,9 +614,9 @@ const STAGES = [
     hint: "最内環は外面だけが鏡（内面は吸収）。プリズムで曲げ→外ミラーで折り返し→プリズムの切れ目→片面ミラーの外面で反射→プリズムと外ミラーの切れ目を抜けて右下の眼へ。",
     target: 336.5, tol: 8, source: 'white',
     rings: [
-      { type:'AM', k:-70,    t0:226.5, r:80,  gapHalf:12 },
-      { type:'PP', delta:20, k:130,    t0:-94.1, r:134, gapOffsets:[0, 33.7], gapHalf:12 },
-      { type:'MM', k:-160,   t0:166.7, r:240, gapHalf:12 },
+      { type:'AM', k:-70,    t0:226.5, r:40,  gapHalf:12 },
+      { type:'PP', delta:20, k:130,    t0:-94.1, r:54, gapOffsets:[0, 33.7], gapHalf:12 },
+      { type:'MM', k:-160,   t0:166.7, r:72, gapHalf:12 },
     ],
     // solved: r=[65,114,230], exit=336.5°
     //   光路: O切れ目→P本体で屈折→M本体で反射→P切れ目→O外面で反射→P切れ目→M切れ目→眼（本体3回・素直な道）
@@ -628,10 +628,25 @@ const STAGES = [
     rings: [
       // 1枚のセクター環: 半0=ミラーMM / 半1=プリズムPP。切れ目を起点に時計回りで割り当て。
       // 解 r=159: 上=鏡で反射(MM.M)→下=プリズムで屈折(PP.P)→眼(128.3°)。両区画を使う2手の見せ場。
-      { k:110, t0:48.5, r:45, gapHalf:18, sectors:[{span:180,code:'MM'},{span:180,code:'PP',delta:69.1}] },
+      { k:110, t0:48.5, r:40, gapHalf:18, sectors:[{span:180,code:'MM'},{span:180,code:'PP',delta:69.1}] },
     ],
     // solved: r≈159, exit=128.3°（鏡半分で反射→プリズム半分で屈折の2手・勝ち幅は中間に約33px）
-    // 初期 r=45 は上半分がプリズムで即屈折→330.7°（眼を外す＝未クリア。鏡を上に向ける操作を促す教材）
+    // 初期 r=40（解から最遠の未クリア・全ステージ共通方針）。解まで環を広げる操作が要る。
+  },
+  {
+    id: 15, name: "Stage 15 — セクター環＋外ミラー（複合）",
+    hint: "内側は『半分が鏡・半分がプリズム』のセクター環、外側はミラー環。狙いの道は3手：まず内のプリズム半分で曲げ、外ミラーで跳ね返し、戻ってきた光を内の鏡半分でもう一度跳ね返して右の眼へ。プリズム半分だけで曲げても外環に届かず外す。両方の区画と外ミラーを順に使うのがコツ。",
+    target: 190.4, tol: 8, source: 'white',
+    rings: [
+      // 内=セクター環: 半0=ミラーMM / 半1=プリズムPP(-47.7)。外=ミラー環。
+      // 解 r=[91,159]: PP.P(内プリズム半分)→MM.M(外ミラー)→MM.M(内鏡半分)→眼(190.4°)。内両区画＋外環の3手。
+      { k:120, t0:77.9, r:199, gapHalf:16, sectors:[{span:180,code:'MM'},{span:180,code:'PP',delta:-47.7}] },
+      { type:'MM', k:130, t0:111.5, r:259, gapHalf:14 },
+    ],
+    // solved: r=[91,159], exit=190.4°（内プリズム→外ミラー→内鏡 の3手）
+    // 初期 r=[199,259]（解から最遠の未クリア・全ステージ共通方針）。解まで両環を大きく縮める操作が要る。
+    // 監査: 全勝ち388通り全てが外ミラー＋内セクターを使用（外環スキップ抜け道0・セクター不使用0）。
+    //       内環を素MMに置換すると勝ち0＝セクター必須。
   },
 ];
 

@@ -12,6 +12,7 @@ tasks/
 *.bak
 *.bak2
 *.bak3
+*.bak*
 
 # OS
 Thumbs.db
