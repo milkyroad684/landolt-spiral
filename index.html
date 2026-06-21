@@ -233,10 +233,6 @@ svg.board {
       <span class="item"><span class="sw" style="background:#BA7517"></span>プリズム (本体で屈折)</span>
       <span class="item"><span class="sw" style="background:#378ADD"></span>ミラー (反射)</span>
       <span class="item"><span class="sw" style="background:#1FA8A0"></span>片面ミラー (外面は反射・内面は吸収)</span>
-      <span class="item"><span class="sw" style="background:#D4537E"></span>ハーフミラー (分岐)</span>
-      <span class="item"><span class="sw" style="background:#BA7517;border-style:dashed"></span>可変レンズ (径で屈折量変化)</span>
-      <span class="item"><span class="sw" style="background:#2D9D4E"></span>緑フィルター</span>
-      <span class="item"><span class="sw" style="background:#C4452F"></span>赤フィルター</span>
     </div>
   </div>
 </div>
@@ -253,7 +249,9 @@ svg.board {
    - MARGIN=2 (handoffの 4)
    - RMIN=40, RMAX=260 (handoffの 48,255)
    - これらは「5環ステージが物理的に成立し」「プレイヤーに調整余地が残る」ための調整
-   - GAP_HALF=11.5, BEAM_HALF=7, RB=290, MAX_BOUNCE=24, MAX_RAYS=12 は仕様通り
+   - GAP_HALF=11.5, BEAM_HALF=7, RB=290 は仕様通り
+   - MAX_BOUNCE=11（曲げ/反射は最大10回。病的な多数回反射の解を自動排除）
+   - ハーフミラー(H)・色フィルター(F)は廃止。光は常に白1本。環は N/P/M/O/L の5種
    ============================================================ */
 
 // ----- 定数 -----
@@ -265,8 +263,13 @@ const RB = 290;
 const MARGIN = 2;
 const STROKE_RATIO = 0.25;
 const HALF_STROKE = STROKE_RATIO / 2;  // 0.125
-const MAX_BOUNCE = 24;
-const MAX_RAYS = 12;
+// 光が「曲げ・反射」できる回数の上限。これを超えると光は消える(lost)。
+// 10 回まで許可（11 回目で消える）。多数回バウンスの病的な解を自動的に排除し、
+// 想定どおりの素直な解（通常 1〜3 回）だけが残るようにするための上限。
+const MAX_BOUNCE = 11;
+// 1 光線がリング境界を横切れる回数の上限（切れ目の素通りも数える）。
+// MAX_BOUNCE とは別物で、素通りを多く含む素直な解が途中で打ち切られないよう余裕をもたせる。
+const MAX_STEPS = 40;
 
 // ----- カラー -----
 const COLORS = {
@@ -274,13 +277,9 @@ const COLORS = {
   P: '#BA7517',
   M: '#378ADD',
   O: '#1FA8A0',
-  H: '#D4537E',
   L: '#BA7517',
-  F_r: '#C4452F',
-  F_g: '#2D9D4E',
   beam_white: '#f3d75e',
-  beam_r: '#e85a4f',
-  beam_g: '#6bd07f',
+  absorb: '#e85a4f',   // 吸収マーク(×)の色
   target: '#2d9d4e',
 };
 
@@ -363,7 +362,6 @@ function trace(stage, rings) {
   const allSegs = [];
   const allMarks = [];
   const finished = [];
-  let raysSpawned = 1;
   const stack = [{
     P: [0, 0],
     d: [0, -1],
@@ -379,9 +377,9 @@ function trace(stage, rings) {
     let bounces = ray.bounces;
     let terminated = false;
 
-    // 各光線を最大 MAX_BOUNCE 回まで追跡
+    // 各光線を追跡（曲げ/反射は MAX_BOUNCE 回まで、境界横切りは MAX_STEPS 回まで）
     let step = 0;
-    while (!terminated && step < MAX_BOUNCE * 2) {
+    while (!terminated && step < MAX_STEPS) {
       step++;
       // 最近接交点を探す
       let bestT = Infinity, bestIdx = -1, isBoundary = false;
@@ -432,14 +430,6 @@ function trace(stage, rings) {
           allMarks.push({ kind: 'refract', x: Q[0], y: Q[1] });
           P = Q; bounces++;
           break;
-        case 'L': {
-          if (inGap) { P = Q; break; }
-          const eff = ring.delta * 100 / ring.r;
-          d = rotateDir(d, eff);
-          allMarks.push({ kind: 'refract', x: Q[0], y: Q[1] });
-          P = Q; bounces++;
-          break;
-        }
         case 'M':
           if (inGap) { P = Q; break; }
           d = reflectDir(d, nrm);
@@ -462,33 +452,6 @@ function trace(stage, rings) {
             terminated = true;
           }
           break;
-        case 'F':
-          // 切れ目は物理的な穴: 色を問わず素通り。本体は色一致時のみ通過。
-          if (inGap || color === 'white' || color === ring.color) {
-            P = Q;
-          } else {
-            allMarks.push({ kind: 'absorb', x: Q[0], y: Q[1] });
-            finished.push({ status: 'absorb', ringIdx: bestIdx, color });
-            terminated = true;
-          }
-          break;
-        case 'H': {
-          if (inGap) { P = Q; break; }
-          const rdir = reflectDir(d, nrm);
-          let passColor = color, refColor = color;
-          if (ring.tint) {
-            passColor = ring.tint.pass;
-            refColor = ring.tint.reflect;
-          }
-          if (raysSpawned < MAX_RAYS) {
-            stack.push({ P: Q.slice(), d: rdir, color: refColor, bounces: bounces + 1 });
-            raysSpawned++;
-          }
-          color = passColor;
-          allMarks.push({ kind: 'split', x: Q[0], y: Q[1] });
-          P = Q; bounces++;
-          break;
-        }
       }
       if (bounces >= MAX_BOUNCE) {
         if (!terminated) {
@@ -548,46 +511,48 @@ const STAGES = [
     // solved: r=[61,105,167]（内ミラーで折返し→プリズム本体で屈折→外環の切れ目から眼）
   },
   {
-    id: 5, name: "Stage 5 — 可変レンズ",
-    hint: "可変レンズは大きいほど屈折が弱い。1つの半径で切れ目位置と屈折量が同時に決まる。",
-    target: 320, tol: 5, source: 'white',
+    id: 5, name: "Stage 5 — プリズムとミラー",
+    hint: "プリズムで曲げた光を、外側のミラーで反射させて眼へ届ける。",
+    target: 75.6, tol: 8,
     rings: [
-      { type:'N', k:80,     t0:307.9, r:65 },
-      { type:'L', delta:90, k:-100,   t0:332.4, r:210 },
+      { type:'P', delta:-27.8, k:-80, t0:323.3, r:42, gapHalf:16 },
+      { type:'M', k:-90, t0:188.5, r:58, gapHalf:16 },
     ],
-    // solved: r=[70,117]
+    // solved: r=[164,230]（プリズムで屈折→ミラーで反射→眼）
   },
   {
-    id: 6, name: "Stage 6 — ハーフミラー",
-    hint: "プリズムで斜めに振った光をハーフミラーが2本に分ける。どちらか1本でも当たればOK。",
-    target: 232.5, tol: 6, source: 'white',
+    id: 6, name: "Stage 6 — 2枚のミラー",
+    hint: "プリズムで曲げ、2枚のミラーで反射をつないで角度を作る。",
+    target: 349.4, tol: 8,
     rings: [
-      { type:'P', delta:40, k:80,     t0:356.3, r:70 },
-      { type:'H', k:-130,   t0:163.9, r:215 },
+      { type:'P', delta:69.4, k:-80, t0:334.2, r:59, gapHalf:16 },
+      { type:'M', k:-110, t0:6.9, r:140, gapHalf:16 },
+      { type:'M', k:110, t0:205.1, r:226, gapHalf:16 },
     ],
-    // solved: r=[40,66]
+    // solved: r=[85,152,243]（プリズム→ミラー→ミラー）
   },
   {
-    id: 7, name: "Stage 7 — 反射→分岐→屈折",
-    hint: "内ミラーで折り返し、中ハーフミラーで分け、外プリズムで右へ屈折。",
-    target: 72.3, tol: 6, source: 'white',
+    id: 7, name: "Stage 7 — 片面ミラー",
+    hint: "片面ミラーは外側の面だけが鏡（内面は吸収・切れ目は素通り）。プリズムで曲げ、外のミラーで折り返して片面ミラーの外面に当てる。",
+    target: 359.3, tol: 8,
     rings: [
-      { type:'M', k:120,    t0:43.6,  r:80 },
-      { type:'H', k:-90,    t0:297.2, r:145 },
-      { type:'P', delta:-78, k:140,   t0:328.1, r:230 },
+      { type:'P', delta:75.3, k:80, t0:232.3, r:135, gapHalf:14 },
+      { type:'O', k:-70, t0:339.2, r:183, gapHalf:14 },
+      { type:'M', k:90, t0:248, r:259, gapHalf:14 },
     ],
-    // solved: r=[126,165,241]
+    // solved: r=[75,134,230]（プリズム→片面ミラー外面で反射→ミラー）
   },
   {
-    id: 8, name: "Stage 8 — 赤と緑",
-    hint: "色分離ハーフミラー: 透過光は赤、反射光は緑に染まる。フィルターは切れ目は素通り、本体は色一致が必要。",
-    target: 90, tol: 6, source: 'white',
+    id: 8, name: "Stage 8 — ミラー3枚",
+    hint: "プリズムで曲げ、3枚のミラーで反射をつなぐ。各環の切れ目と本体の当てどころを合わせる。",
+    target: 50.8, tol: 8,
     rings: [
-      { type:'H', k:60,  t0:155.9, r:75, tint:{pass:'r', reflect:'g'} },
-      { type:'F', color:'g', k:-110, t0:174.1, r:145 },
-      { type:'F', color:'r', k:130,  t0:265.8, r:230 },
+      { type:'P', delta:-25.6, k:130, t0:146.4, r:67, gapHalf:12 },
+      { type:'M', k:-120, t0:76.8, r:101, gapHalf:12 },
+      { type:'M', k:90, t0:0.2, r:168, gapHalf:12 },
+      { type:'M', k:-120, t0:211.4, r:227, gapHalf:12 },
     ],
-    // solved: r=[40,162,211]
+    // solved: r=[76,112,165,233]
   },
   {
     id: 9, name: "Stage 9 — 多段反射",
@@ -602,16 +567,16 @@ const STAGES = [
   },
   {
     id: 10, name: "Stage 10 — 集大成",
-    hint: "5環すべて使う。分岐した光のどれか1本が眼に届けばOK。",
-    target: 215, tol: 8, source: 'white',
+    hint: "5環すべてを使う。プリズムで曲げ、4枚のミラーで反射をつないで眼へ。",
+    target: 209.3, tol: 8,
     rings: [
-      { type:'N', k:60,     t0:320.3, r:50 },
-      { type:'L', delta:70, k:-90,    t0:119.0, r:80 },
-      { type:'H', k:110,    t0:115.6, r:115 },
-      { type:'M', k:-130,   t0:282.0, r:160 },
-      { type:'P', delta:45, k:80,     t0:249.8, r:220 },
+      { type:'P', delta:-41.7, k:-110, t0:48.4, r:69, gapHalf:11 },
+      { type:'M', k:90, t0:253, r:99, gapHalf:11 },
+      { type:'M', k:-120, t0:272.9, r:145, gapHalf:11 },
+      { type:'M', k:110, t0:112.3, r:189, gapHalf:11 },
+      { type:'M', k:-90, t0:332.2, r:258, gapHalf:11 },
     ],
-    // solved: r=[54,78,103,155,250]
+    // solved: r=[61,102,141,191,248]
   },
   {
     id: 11, name: "Stage 11 — 切れ目デモ（複数切れ目・可変幅）",
@@ -658,14 +623,13 @@ let opCount = 0;
 let cleared = new Set();
 let initialRings = null;
 
-// 環の複製。入れ子（gapOffsets / gapHalf 配列・tint オブジェクト）まで複製し、
+// 環の複製。入れ子（gapOffsets / gapHalf 配列）まで複製し、
 // currentStage と initialRings・STAGES が同じ配列/オブジェクトを共有しないようにする。
 // 現状は r しか書き換えないが、将来エディタ/自動生成で入れ子を触っても汚染しないため。
 function cloneRing(r) {
   const c = { ...r };
   if (Array.isArray(r.gapOffsets)) c.gapOffsets = r.gapOffsets.slice();
   if (Array.isArray(r.gapHalf)) c.gapHalf = r.gapHalf.slice();
-  if (r.tint) c.tint = { ...r.tint };
   return c;
 }
 
@@ -721,15 +685,11 @@ function ringColor(ring) {
     case 'P': return COLORS.P;
     case 'M': return COLORS.M;
     case 'O': return COLORS.O;
-    case 'H': return COLORS.H;
-    case 'L': return COLORS.L;
-    case 'F': return ring.color === 'r' ? COLORS.F_r : COLORS.F_g;
   }
   return '#888';
 }
-function rayColor(c) {
-  if (c === 'r') return COLORS.beam_r;
-  if (c === 'g') return COLORS.beam_g;
+function rayColor() {
+  // 光は常に白 1 本。
   return COLORS.beam_white;
 }
 
@@ -786,13 +746,13 @@ function render() {
     svg.appendChild(el('line', {
       x1: CX + seg.from[0], y1: CY + seg.from[1],
       x2: CX + seg.to[0],   y2: CY + seg.to[1],
-      stroke: rayColor(seg.color), 'stroke-width': 9,
+      stroke: rayColor(), 'stroke-width': 9,
       'stroke-opacity': 0.18, 'stroke-linecap': 'round',
     }));
     svg.appendChild(el('line', {
       x1: CX + seg.from[0], y1: CY + seg.from[1],
       x2: CX + seg.to[0],   y2: CY + seg.to[1],
-      stroke: rayColor(seg.color), 'stroke-width': 1.8,
+      stroke: rayColor(), 'stroke-width': 1.8,
       'stroke-linecap': 'round',
     }));
   }
@@ -809,11 +769,8 @@ function render() {
       'stroke-linecap': 'butt',
       'data-ring': i,
     };
-    if (ring.type === 'P' || ring.type === 'H') {
+    if (ring.type === 'P') {
       attrs['stroke-opacity'] = '0.55';
-    }
-    if (ring.type === 'L') {
-      attrs['stroke-dasharray'] = `${Math.max(4, sw*0.4).toFixed(1)} ${Math.max(3, sw*0.3).toFixed(1)}`;
     }
     const path = el('path', attrs);
     path.style.cursor = 'pointer';
@@ -837,17 +794,16 @@ function render() {
       const g = el('g', { transform: `translate(${CX + m.x},${CY + m.y})` });
       g.appendChild(el('line', {
         x1: -5, y1: -5, x2: 5, y2: 5,
-        stroke: COLORS.beam_r, 'stroke-width': 2.5, 'stroke-linecap': 'round',
+        stroke: COLORS.absorb, 'stroke-width': 2.5, 'stroke-linecap': 'round',
       }));
       g.appendChild(el('line', {
         x1: -5, y1: 5, x2: 5, y2: -5,
-        stroke: COLORS.beam_r, 'stroke-width': 2.5, 'stroke-linecap': 'round',
+        stroke: COLORS.absorb, 'stroke-width': 2.5, 'stroke-linecap': 'round',
       }));
       svg.appendChild(g);
     } else {
       let col = COLORS.P;
       if (m.kind === 'reflect') col = COLORS.M;
-      else if (m.kind === 'split') col = COLORS.H;
       svg.appendChild(el('circle', {
         cx: CX + m.x, cy: CY + m.y, r: 4,
         fill: col, stroke: '#fff', 'stroke-width': 1,
@@ -920,9 +876,6 @@ function ringTypeLabel(r) {
     case 'P': return 'プリズム';
     case 'M': return 'ミラー';
     case 'O': return '片面ミラー';
-    case 'H': return 'ハーフミラー';
-    case 'L': return '可変レンズ';
-    case 'F': return 'フィルター(' + (r.color === 'r' ? '赤' : '緑') + ')';
   }
   return '?';
 }
@@ -951,8 +904,7 @@ function buildControls() {
     const sw = document.createElement('span');
     sw.className = 'swatch';
     sw.style.background = ringColor(ring);   // 環の種類は固定なので一度だけ設定
-    if (ring.type === 'P' || ring.type === 'H') sw.style.opacity = '0.55';
-    if (ring.type === 'L') sw.style.borderStyle = 'dashed';
+    if (ring.type === 'P') sw.style.opacity = '0.55';
     const txtNode = document.createTextNode('');
     label.appendChild(sw);
     label.appendChild(txtNode);
@@ -1113,7 +1065,7 @@ function solve(stage) {
   const N = baseRings.length;
 
   function bodyHits(res) {
-    return res.marks.filter(m => m.kind === 'refract' || m.kind === 'reflect' || m.kind === 'split').length;
+    return res.marks.filter(m => m.kind === 'refract' || m.kind === 'reflect').length;
   }
 
   // step 刻みで全組み合わせを走査し、勝てた組を {r, bh} で集める。
