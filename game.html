@@ -229,10 +229,13 @@ svg.board {
   <p class="help">操作: 環をドラッグで大きさを変えるか、−／＋ボタンで 1px ずつ調整。中心から発射される光が外周の眼に当たればクリアです。</p>
   <div class="legend">
     <div class="row">
-      <span class="item"><span class="sw" style="background:#888780"></span>通常環 (壁は吸収)</span>
-      <span class="item"><span class="sw" style="background:#BA7517"></span>プリズム (本体で屈折)</span>
+      <span class="item"><span class="sw" style="background:#888780"></span>吸収 (壁)</span>
       <span class="item"><span class="sw" style="background:#378ADD"></span>ミラー (反射)</span>
-      <span class="item"><span class="sw" style="background:#1FA8A0"></span>片面ミラー (外面は反射・内面は吸収)</span>
+      <span class="item"><span class="sw" style="background:#BA7517"></span>プリズム (屈折)</span>
+    </div>
+    <div class="row" style="margin-top:4px; font-size:0.92em; opacity:0.85;">
+      環は色で性質が分かります。内側半分と外側半分で色が違う環は、内面と外面で性質が変わります
+      (例: 内プリズム・外ミラー)。色が1つなら内外とも同じ性質です。
     </div>
   </div>
 </div>
@@ -251,7 +254,10 @@ svg.board {
    - これらは「5環ステージが物理的に成立し」「プレイヤーに調整余地が残る」ための調整
    - GAP_HALF=11.5, BEAM_HALF=7, RB=290 は仕様通り
    - MAX_BOUNCE=11（曲げ/反射は最大10回。病的な多数回反射の解を自動排除）
-   - ハーフミラー(H)・色フィルター(F)は廃止。光は常に白1本。環は N/P/M/O/L の5種
+   - ハーフミラー(H)・色フィルター(F)は廃止。光は常に白1本。
+   - 環の種類は2文字コード [内面][外面]（各文字 A=吸収 / M=ミラー / P=プリズム）。
+     例: AA=両面吸収(通常壁), MM=両面ミラー, PP=両面プリズム, AM=内吸収外ミラー(旧・片面ミラー),
+         PM=内プリズム外ミラー, PA=内プリズム外吸収。delta は P 面の屈折量。
    ============================================================ */
 
 // ----- 定数 -----
@@ -272,16 +278,19 @@ const MAX_BOUNCE = 11;
 const MAX_STEPS = 40;
 
 // ----- カラー -----
+// 環の面ごとの色（A=吸収/壁, M=ミラー, P=プリズム）。
+// 環は2文字コード [内面][外面] で表すので、色も面単位で持つ。
 const COLORS = {
-  N: '#888780',
-  P: '#BA7517',
-  M: '#378ADD',
-  O: '#1FA8A0',
-  L: '#BA7517',
+  A: '#888780',        // 吸収（壁）
+  M: '#378ADD',        // ミラー（反射）
+  P: '#BA7517',        // プリズム（屈折）
   beam_white: '#f3d75e',
   absorb: '#e85a4f',   // 吸収マーク(×)の色
   target: '#2d9d4e',
 };
+// 1面の文字 → 色 / 不透明度（プリズム面はガラスっぽく半透明にする）。
+function faceColor(ch) { return ch === 'M' ? COLORS.M : ch === 'P' ? COLORS.P : COLORS.A; }
+function faceOpacity(ch) { return ch === 'P' ? 0.55 : 1; }
 
 // ----- 数学ユーティリティ -----
 function gapAngle(ring) {
@@ -417,41 +426,27 @@ function trace(stage, rings) {
       const inGap = gapList(ring).some(g => Math.abs(normDiff(phi, g.angle)) <= slackDeg(ring.r, g.half));
       const nrm = [Q[0]/ring.r, Q[1]/ring.r];
 
-      switch (ring.type) {
-        case 'N':
-          if (inGap) { P = Q; break; }
+      if (inGap) {
+        // 切れ目は最優先で素通り（内外どちらの面でも穴は穴）。
+        P = Q;
+      } else {
+        // 環の種類は2文字コード [内面][外面]（各文字 A=吸収 / M=ミラー / P=プリズム）。
+        // 法線 nrm は中心から外向き。d·nrm<0 は内向きに進んで当たった=外面ヒット → 外面の文字。
+        // d·nrm>=0 は外向きに進んで当たった=内面ヒット → 内面の文字。
+        const face = (d[0]*nrm[0] + d[1]*nrm[1] < 0) ? ring.type[1] : ring.type[0];
+        if (face === 'A') {
           allMarks.push({ kind: 'absorb', x: Q[0], y: Q[1] });
           finished.push({ status: 'absorb', ringIdx: bestIdx, color });
           terminated = true;
-          break;
-        case 'P':
-          if (inGap) { P = Q; break; }
-          d = rotateDir(d, ring.delta);
-          allMarks.push({ kind: 'refract', x: Q[0], y: Q[1] });
-          P = Q; bounces++;
-          break;
-        case 'M':
-          if (inGap) { P = Q; break; }
+        } else if (face === 'M') {
           d = reflectDir(d, nrm);
           allMarks.push({ kind: 'reflect', x: Q[0], y: Q[1] });
           P = Q; bounces++;
-          break;
-        case 'O':
-          // 片面ミラー: 外側の面=鏡(反射) / 内側の面=吸収 / 切れ目=素通り。
-          // 法線 nrm は中心から外向き。光の進行方向 d との内積で当たった面を判定する。
-          if (inGap) { P = Q; break; }
-          if (d[0]*nrm[0] + d[1]*nrm[1] < 0) {
-            // 内向きに進んで当たった = 外面に当たった → 反射
-            d = reflectDir(d, nrm);
-            allMarks.push({ kind: 'reflect', x: Q[0], y: Q[1] });
-            P = Q; bounces++;
-          } else {
-            // 外向きに進んで当たった = 内面に当たった → 吸収
-            allMarks.push({ kind: 'absorb', x: Q[0], y: Q[1] });
-            finished.push({ status: 'absorb', ringIdx: bestIdx, color });
-            terminated = true;
-          }
-          break;
+        } else if (face === 'P') {
+          d = rotateDir(d, ring.delta);
+          allMarks.push({ kind: 'refract', x: Q[0], y: Q[1] });
+          P = Q; bounces++;
+        }
       }
       if (bounces >= MAX_BOUNCE) {
         if (!terminated) {
@@ -476,8 +471,8 @@ const STAGES = [
     hint: "両環の切れ目を真上 (270°) にそろえる。",
     target: 270, tol: 6, source: 'white',
     rings: [
-      { type:'N', k:90,  t0:270, r:60 },
-      { type:'N', k:120, t0:160, r:200 },
+      { type:'AA', k:90,  t0:270, r:60 },
+      { type:'AA', k:120, t0:160, r:200 },
     ],
   },
   {
@@ -485,8 +480,8 @@ const STAGES = [
     hint: "内環で真上に通し、外プリズム本体に当てて右上へ屈折。",
     target: 289, tol: 4, source: 'white',
     rings: [
-      { type:'N', k:90,    t0:270,   r:60 },
-      { type:'P', delta:40, k:-120,  t0:171.4, r:200 },
+      { type:'AA', k:90,    t0:270,   r:60 },
+      { type:'PP', delta:40, k:-120,  t0:171.4, r:200 },
     ],
   },
   {
@@ -494,9 +489,9 @@ const STAGES = [
     hint: "ミラーで折り返す。プリズムの本体に当てると曲がる。",
     target: 78, tol: 4, source: 'white',
     rings: [
-      { type:'M', k:-140, t0:45,  r:95 },
-      { type:'N', k:110,  t0:26,  r:150 },
-      { type:'P', delta:-50, k:200, t0:207, r:232 },
+      { type:'MM', k:-140, t0:45,  r:95 },
+      { type:'AA', k:110,  t0:26,  r:150 },
+      { type:'PP', delta:-50, k:200, t0:207, r:232 },
     ],
   },
   {
@@ -504,9 +499,9 @@ const STAGES = [
     hint: "内側のミラーで光を折り返し、プリズムで曲げて、外環の切れ目から眼へ通す。",
     target: 69.1, tol: 10, source: 'white',
     rings: [
-      { type:'M', k:110,       t0:169.0, r:78,  gapHalf:16 },
-      { type:'P', delta:-30.5, k:-130,  t0:326.8, r:130, gapHalf:16 },
-      { type:'N', k:70,        t0:20.6,  r:210, gapHalf:16 },
+      { type:'MM', k:110,       t0:169.0, r:78,  gapHalf:16 },
+      { type:'PP', delta:-30.5, k:-130,  t0:326.8, r:130, gapHalf:16 },
+      { type:'AA', k:70,        t0:20.6,  r:210, gapHalf:16 },
     ],
     // solved: r=[61,105,167]（内ミラーで折返し→プリズム本体で屈折→外環の切れ目から眼）
   },
@@ -515,8 +510,8 @@ const STAGES = [
     hint: "プリズムで曲げた光を、外側のミラーで反射させて眼へ届ける。",
     target: 75.6, tol: 8,
     rings: [
-      { type:'P', delta:-27.8, k:-80, t0:323.3, r:42, gapHalf:16 },
-      { type:'M', k:-90, t0:188.5, r:58, gapHalf:16 },
+      { type:'PP', delta:-27.8, k:-80, t0:323.3, r:42, gapHalf:16 },
+      { type:'MM', k:-90, t0:188.5, r:58, gapHalf:16 },
     ],
     // solved: r=[164,230]（プリズムで屈折→ミラーで反射→眼）
   },
@@ -525,9 +520,9 @@ const STAGES = [
     hint: "プリズムで曲げ、2枚のミラーで反射をつないで角度を作る。",
     target: 349.4, tol: 8,
     rings: [
-      { type:'P', delta:69.4, k:-80, t0:334.2, r:59, gapHalf:16 },
-      { type:'M', k:-110, t0:6.9, r:140, gapHalf:16 },
-      { type:'M', k:110, t0:205.1, r:226, gapHalf:16 },
+      { type:'PP', delta:69.4, k:-80, t0:334.2, r:59, gapHalf:16 },
+      { type:'MM', k:-110, t0:6.9, r:140, gapHalf:16 },
+      { type:'MM', k:110, t0:205.1, r:226, gapHalf:16 },
     ],
     // solved: r=[85,152,243]（プリズム→ミラー→ミラー）
   },
@@ -536,9 +531,9 @@ const STAGES = [
     hint: "片面ミラーは外側の面だけが鏡（内面は吸収・切れ目は素通り）。プリズムで曲げ、外のミラーで折り返して片面ミラーの外面に当てる。",
     target: 359.3, tol: 8,
     rings: [
-      { type:'P', delta:75.3, k:80, t0:232.3, r:135, gapHalf:14 },
-      { type:'O', k:-70, t0:339.2, r:183, gapHalf:14 },
-      { type:'M', k:90, t0:248, r:259, gapHalf:14 },
+      { type:'PP', delta:75.3, k:80, t0:232.3, r:135, gapHalf:14 },
+      { type:'AM', k:-70, t0:339.2, r:183, gapHalf:14 },
+      { type:'MM', k:90, t0:248, r:259, gapHalf:14 },
     ],
     // solved: r=[75,134,230]（プリズム→片面ミラー外面で反射→ミラー）
   },
@@ -547,10 +542,10 @@ const STAGES = [
     hint: "プリズムで曲げ、3枚のミラーで反射をつなぐ。各環の切れ目と本体の当てどころを合わせる。",
     target: 50.8, tol: 8,
     rings: [
-      { type:'P', delta:-25.6, k:130, t0:146.4, r:67, gapHalf:12 },
-      { type:'M', k:-120, t0:76.8, r:101, gapHalf:12 },
-      { type:'M', k:90, t0:0.2, r:168, gapHalf:12 },
-      { type:'M', k:-120, t0:211.4, r:227, gapHalf:12 },
+      { type:'PP', delta:-25.6, k:130, t0:146.4, r:67, gapHalf:12 },
+      { type:'MM', k:-120, t0:76.8, r:101, gapHalf:12 },
+      { type:'MM', k:90, t0:0.2, r:168, gapHalf:12 },
+      { type:'MM', k:-120, t0:211.4, r:227, gapHalf:12 },
     ],
     // solved: r=[76,112,165,233]
   },
@@ -559,9 +554,9 @@ const STAGES = [
     hint: "内プリズムで斜めに振り、2枚のミラーで反射して角度を稼ぎ、外ミラーの切れ目から眼へ。",
     target: 204.7, tol: 10, source: 'white',
     rings: [
-      { type:'P', delta:-51.7, k:-130, t0:242.1, r:60,  gapHalf:16 },
-      { type:'M', k:110,       t0:216.6, r:120, gapHalf:16 },
-      { type:'M', k:110,       t0:62.0,  r:200, gapHalf:16 },
+      { type:'PP', delta:-51.7, k:-130, t0:242.1, r:60,  gapHalf:16 },
+      { type:'MM', k:110,       t0:216.6, r:120, gapHalf:16 },
+      { type:'MM', k:110,       t0:62.0,  r:200, gapHalf:16 },
     ],
     // solved: r=[66,112,253]（内プリズムで屈折→ミラー2枚で反射→外ミラーの切れ目から眼）
   },
@@ -570,11 +565,11 @@ const STAGES = [
     hint: "5環すべてを使う。プリズムで曲げ、4枚のミラーで反射をつないで眼へ。",
     target: 209.3, tol: 8,
     rings: [
-      { type:'P', delta:-41.7, k:-110, t0:48.4, r:69, gapHalf:11 },
-      { type:'M', k:90, t0:253, r:99, gapHalf:11 },
-      { type:'M', k:-120, t0:272.9, r:145, gapHalf:11 },
-      { type:'M', k:110, t0:112.3, r:189, gapHalf:11 },
-      { type:'M', k:-90, t0:332.2, r:258, gapHalf:11 },
+      { type:'PP', delta:-41.7, k:-110, t0:48.4, r:69, gapHalf:11 },
+      { type:'MM', k:90, t0:253, r:99, gapHalf:11 },
+      { type:'MM', k:-120, t0:272.9, r:145, gapHalf:11 },
+      { type:'MM', k:110, t0:112.3, r:189, gapHalf:11 },
+      { type:'MM', k:-90, t0:332.2, r:258, gapHalf:11 },
     ],
     // solved: r=[61,102,141,191,248]
   },
@@ -583,10 +578,10 @@ const STAGES = [
     hint: "外環には切れ目が2つ（幅も角度差も自由）。内環の切れ目と外環のどちらかの切れ目を、真上(270°)に重ねて光を通す。",
     target: 270, tol: 8, source: 'white',
     rings: [
-      { type:'N', k:90,   t0:316.3, r:55 },
+      { type:'AA', k:90,   t0:316.3, r:55 },
       // 外環: 切れ目2個。基準角から 0° と 130° に配置（等間隔ではない）、
       //       幅も 20° と 8° で別々（gapHalf を配列で指定）。
-      { type:'N', k:-120, t0:260,   r:200, gapOffsets:[0, 130], gapHalf:[20, 8] },
+      { type:'AA', k:-120, t0:260,   r:200, gapOffsets:[0, 130], gapHalf:[20, 8] },
     ],
     // solved: r=[68,90], exit=270.0°（外環は幅20°の切れ目で270°を通す解）
   },
@@ -596,8 +591,8 @@ const STAGES = [
     target: 320, tol: 4, source: 'white',
     rings: [
       // 二重ランドルト環: 切れ目2個を 60° 差で配置。r≈60 と r≈100 の二通りで真上を通せる。
-      { type:'N', k:80,     t0:270, r:55, gapOffsets:[0, 60], gapHalf:[14, 14] },
-      { type:'P', delta:72, k:-110, t0:30, r:200 },
+      { type:'AA', k:80,     t0:270, r:55, gapOffsets:[0, 60], gapHalf:[14, 14] },
+      { type:'PP', delta:72, k:-110, t0:30, r:200 },
     ],
     // solved: r=[60,96], exit=323.6°（内環は2つ目の切れ目で270°を通し、プリズム本体で屈折）
   },
@@ -606,9 +601,9 @@ const STAGES = [
     hint: "最内環は外面だけが鏡（内面は吸収）。プリズムで曲げ→外ミラーで折り返し→プリズムの切れ目→片面ミラーの外面で反射→プリズムと外ミラーの切れ目を抜けて右下の眼へ。",
     target: 336.5, tol: 8, source: 'white',
     rings: [
-      { type:'O', k:-70,    t0:226.5, r:80,  gapHalf:12 },
-      { type:'P', delta:20, k:130,    t0:-94.1, r:134, gapOffsets:[0, 33.7], gapHalf:12 },
-      { type:'M', k:-160,   t0:166.7, r:240, gapHalf:12 },
+      { type:'AM', k:-70,    t0:226.5, r:80,  gapHalf:12 },
+      { type:'PP', delta:20, k:130,    t0:-94.1, r:134, gapOffsets:[0, 33.7], gapHalf:12 },
+      { type:'MM', k:-160,   t0:166.7, r:240, gapHalf:12 },
     ],
     // solved: r=[65,114,230], exit=336.5°
     //   光路: O切れ目→P本体で屈折→M本体で反射→P切れ目→O外面で反射→P切れ目→M切れ目→眼（本体3回・素直な道）
@@ -680,13 +675,12 @@ function ringPathD(cx, cy, r, gaps) {
 }
 
 function ringColor(ring) {
-  switch (ring.type) {
-    case 'N': return COLORS.N;
-    case 'P': return COLORS.P;
-    case 'M': return COLORS.M;
-    case 'O': return COLORS.O;
-  }
-  return '#888';
+  // コントロール行の色見本(CSS background)用。両面同じなら1色、内外で違えば
+  // 左=内面色 / 右=外面色 のグラデーションで「内外で性質が違う」ことを示す。
+  const inner = faceColor(ring.type[0]);
+  const outer = faceColor(ring.type[1]);
+  if (ring.type[0] === ring.type[1]) return inner;
+  return `linear-gradient(to right, ${inner} 50%, ${outer} 50%)`;
 }
 function rayColor() {
   // 光は常に白 1 本。
@@ -757,24 +751,33 @@ function render() {
     }));
   }
 
-  // 環
+  // 環: 種類は2文字コード [内面][外面]。両面同じなら1本の帯、内外で違えば
+  //     帯を内半分/外半分に分けてそれぞれの面の色で描く（内外の違いを見せる）。
   for (let i = 0; i < currentStage.rings.length; i++) {
     const ring = currentStage.rings[i];
     const sw = STROKE_RATIO * ring.r;
-    const attrs = {
-      d: ringPathD(CX, CY, ring.r, gapList(ring)),
-      fill: 'none',
-      stroke: ringColor(ring),
-      'stroke-width': sw.toFixed(2),
-      'stroke-linecap': 'butt',
-      'data-ring': i,
+    const gaps = gapList(ring);
+    const inner = ring.type[0], outer = ring.type[1];
+    const addArc = (radius, width, ch) => {
+      const path = el('path', {
+        d: ringPathD(CX, CY, radius, gaps),
+        fill: 'none',
+        stroke: faceColor(ch),
+        'stroke-width': width.toFixed(2),
+        'stroke-linecap': 'butt',
+        'stroke-opacity': faceOpacity(ch),
+        'data-ring': i,
+      });
+      path.style.cursor = 'pointer';
+      svg.appendChild(path);
     };
-    if (ring.type === 'P') {
-      attrs['stroke-opacity'] = '0.55';
+    if (inner === outer) {
+      addArc(ring.r, sw, inner);
+    } else {
+      const halfSw = sw / 2;
+      addArc(ring.r - halfSw / 2, halfSw, inner);   // 内側の半分
+      addArc(ring.r + halfSw / 2, halfSw, outer);   // 外側の半分
     }
-    const path = el('path', attrs);
-    path.style.cursor = 'pointer';
-    svg.appendChild(path);
   }
 
   // 選択環ガイド
@@ -870,14 +873,12 @@ function hideWinBanner() {
   area.innerHTML = '';
 }
 
+function faceName(ch) { return ch === 'M' ? 'ミラー' : ch === 'P' ? 'プリズム' : '吸収'; }
 function ringTypeLabel(r) {
-  switch (r.type) {
-    case 'N': return '通常';
-    case 'P': return 'プリズム';
-    case 'M': return 'ミラー';
-    case 'O': return '片面ミラー';
-  }
-  return '?';
+  // 2文字コード [内面][外面] から表示名を作る。両面同じなら短く、違えば「内◯・外◯」。
+  const inner = r.type[0], outer = r.type[1];
+  if (inner === outer) return inner === 'A' ? '通常壁' : faceName(inner);
+  return `内${faceName(inner)}・外${faceName(outer)}`;
 }
 
 // コントロール行は「ステージ読み込み時に一度だけ構築」し、以後は数値と選択状態のみ更新する。
@@ -904,7 +905,7 @@ function buildControls() {
     const sw = document.createElement('span');
     sw.className = 'swatch';
     sw.style.background = ringColor(ring);   // 環の種類は固定なので一度だけ設定
-    if (ring.type === 'P') sw.style.opacity = '0.55';
+    if (ring.type === 'PP') sw.style.opacity = '0.55';  // 両面プリズムはガラス感を出す
     const txtNode = document.createTextNode('');
     label.appendChild(sw);
     label.appendChild(txtNode);
