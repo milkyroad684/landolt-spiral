@@ -236,6 +236,7 @@ svg.board {
     <div class="row" style="margin-top:4px; font-size:0.92em; opacity:0.85;">
       環は色で性質が分かります。内側半分と外側半分で色が違う環は、内面と外面で性質が変わります
       (例: 内プリズム・外ミラー)。色が1つなら内外とも同じ性質です。
+      <span style="display:block; margin-top:2px;">白い目印で区切られた環は「セクター環」。区画ごと(半分ずつ)に性質が変わり、半径を変えると区画も回ります。</span>
     </div>
   </div>
 </div>
@@ -329,6 +330,15 @@ function gapList(ring) {
     return GAP_HALF;
   };
   return offsets.map((o, i) => ({ angle: base + o, half: halfOf(i) }));
+}
+// セクター環: ring.sectors = [{span:度, code:'[内面][外面]', delta?}]。境界は gapAngle(切れ目)を
+// 起点に時計回りで割り当てる（半径を変えると切れ目もセクター境界も一緒に回る）。
+// 与えた角度 phi(度) が属するセクターを返す。sectors が無い環では呼ばない。
+function sectorAt(ring, phi) {
+  const off = ((phi - gapAngle(ring)) % 360 + 360) % 360;
+  let acc = 0;
+  for (const s of ring.sectors) { acc += s.span; if (off < acc) return s; }
+  return ring.sectors[ring.sectors.length - 1];
 }
 function rotateDir(d, deg) {
   const a = Math.atan2(d[1], d[0]) * 180 / Math.PI + deg;
@@ -431,9 +441,12 @@ function trace(stage, rings) {
         P = Q;
       } else {
         // 環の種類は2文字コード [内面][外面]（各文字 A=吸収 / M=ミラー / P=プリズム）。
+        // セクター環(sectors)では当たった角度の区画の code/delta を使う。それ以外は環全体の type/delta。
+        let code = ring.type, delta = ring.delta;
+        if (ring.sectors) { const sec = sectorAt(ring, phi); code = sec.code; delta = sec.delta; }
         // 法線 nrm は中心から外向き。d·nrm<0 は内向きに進んで当たった=外面ヒット → 外面の文字。
         // d·nrm>=0 は外向きに進んで当たった=内面ヒット → 内面の文字。
-        const face = (d[0]*nrm[0] + d[1]*nrm[1] < 0) ? ring.type[1] : ring.type[0];
+        const face = (d[0]*nrm[0] + d[1]*nrm[1] < 0) ? code[1] : code[0];
         if (face === 'A') {
           allMarks.push({ kind: 'absorb', x: Q[0], y: Q[1] });
           finished.push({ status: 'absorb', ringIdx: bestIdx, color });
@@ -443,7 +456,7 @@ function trace(stage, rings) {
           allMarks.push({ kind: 'reflect', x: Q[0], y: Q[1] });
           P = Q; bounces++;
         } else if (face === 'P') {
-          d = rotateDir(d, ring.delta);
+          d = rotateDir(d, delta);
           allMarks.push({ kind: 'refract', x: Q[0], y: Q[1] });
           P = Q; bounces++;
         }
@@ -608,6 +621,19 @@ const STAGES = [
     // solved: r=[65,114,230], exit=336.5°
     //   光路: O切れ目→P本体で屈折→M本体で反射→P切れ目→O外面で反射→P切れ目→M切れ目→眼（本体3回・素直な道）
   },
+  {
+    id: 14, name: "Stage 14 — セクター環（半分だけ鏡）",
+    hint: "外環は「半分がミラー・半分が壁」のセクター環。半径を変えると区画も回る。曲げた光を“鏡の半分”に当てて反射させ、内プリズムで曲げ直して左下の眼へ。壁の半分に当てると光は消える。",
+    target: 118.8, tol: 8, source: 'white',
+    rings: [
+      // 内: 全周プリズム。外: 180°セクター環（半0=ミラーMM / 半1=壁AA）。切れ目起点に時計回り。
+      { type:'PP', delta:50.6, k:-90, t0:315.1, r:73, gapHalf:16 },
+      { k:90, t0:16.2, r:184, gapHalf:16, sectors:[{span:180,code:'MM'},{span:180,code:'AA'}] },
+    ],
+    // solved: r=[139,217], exit=118.8°
+    //   光路: 内環切れ目を通過→外セクターのミラー半分で反射→内プリズム本体で屈折→眼（本体2回）
+    //   初期 r=[73,184] は壁半分に当たって消滅＝未クリア（鏡の半分を光に向ける操作を促す）
+  },
 ];
 
 // ----- 状態 -----
@@ -625,6 +651,7 @@ function cloneRing(r) {
   const c = { ...r };
   if (Array.isArray(r.gapOffsets)) c.gapOffsets = r.gapOffsets.slice();
   if (Array.isArray(r.gapHalf)) c.gapHalf = r.gapHalf.slice();
+  if (Array.isArray(r.sectors)) c.sectors = r.sectors.map(s => ({ ...s }));
   return c;
 }
 
@@ -677,6 +704,13 @@ function ringPathD(cx, cy, r, gaps) {
 function ringColor(ring) {
   // コントロール行の色見本(CSS background)用。両面同じなら1色、内外で違えば
   // 左=内面色 / 右=外面色 のグラデーションで「内外で性質が違う」ことを示す。
+  if (ring.sectors) {
+    // セクター環は区画ごとの代表色(外面)を等分グラデで並べる。
+    const cols = ring.sectors.map(s => faceColor(s.code[1]));
+    const n = cols.length;
+    const stops = cols.map((c, i) => `${c} ${(100*i/n).toFixed(0)}% ${(100*(i+1)/n).toFixed(0)}%`).join(', ');
+    return `linear-gradient(to right, ${stops})`;
+  }
   const inner = faceColor(ring.type[0]);
   const outer = faceColor(ring.type[1]);
   if (ring.type[0] === ring.type[1]) return inner;
@@ -691,6 +725,70 @@ function el(name, attrs) {
   const e = document.createElementNS(NSVG, name);
   for (const k in attrs) e.setAttribute(k, attrs[k]);
   return e;
+}
+
+// 始点角 a0→終点角 a1(度) の弧のパス文字列（時計回り）。
+function arcWindowD(cx, cy, r, a0, a1) {
+  const large = (a1 - a0) > 180 ? 1 : 0;
+  const x1 = cx + r*Math.cos(a0*Math.PI/180), y1 = cy + r*Math.sin(a0*Math.PI/180);
+  const x2 = cx + r*Math.cos(a1*Math.PI/180), y2 = cy + r*Math.sin(a1*Math.PI/180);
+  return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+// 角度範囲 [a0,a1] の弧片を、2文字コード code の内/外面色で描く（内外で違えば帯を半分に割る）。
+function drawArcPiece(svg, ringIdx, a0, a1, code, r, sw) {
+  const add = (radius, width, ch) => {
+    const path = el('path', {
+      d: arcWindowD(CX, CY, radius, a0, a1),
+      fill: 'none', stroke: faceColor(ch), 'stroke-width': width.toFixed(2),
+      'stroke-linecap': 'butt', 'stroke-opacity': faceOpacity(ch), 'data-ring': ringIdx,
+    });
+    path.style.cursor = 'pointer';
+    svg.appendChild(path);
+  };
+  if (code[0] === code[1]) add(r, sw, code[0]);
+  else { const h = sw/2; add(r - h/2, h, code[0]); add(r + h/2, h, code[1]); }
+}
+// セクター境界の目印（帯を横切る短い白線）。
+function drawSectorTick(svg, ang, r, sw) {
+  const ar = ang*Math.PI/180, c = Math.cos(ar), s = Math.sin(ar);
+  const r0 = r - sw/2, r1 = r + sw/2;
+  svg.appendChild(el('line', {
+    x1:(CX+r0*c).toFixed(2), y1:(CY+r0*s).toFixed(2), x2:(CX+r1*c).toFixed(2), y2:(CY+r1*s).toFixed(2),
+    stroke:'#fff', 'stroke-width':1.5, 'stroke-opacity':0.85,
+  }));
+}
+// 通常環・セクター環を統一して描く。円周を「切れ目」と「セクター境界」で区切り、
+// 区画ごとに色を変えて弧を描く。境界には目印を入れる。
+function drawRing(svg, ring, i) {
+  const sw = STROKE_RATIO * ring.r;
+  const gaps = gapList(ring);
+  const base = gapAngle(ring);
+  const sectors = ring.sectors || [{ span: 360, code: ring.type, delta: ring.delta }];
+  const inGapAt = (ang) => gaps.some(g => Math.abs(normDiff(ang, g.angle)) <= g.half);
+  const codeAt = (ang) => {
+    let off = ((ang - base) % 360 + 360) % 360, acc = 0;
+    for (const s of sectors) { acc += s.span; if (off < acc) return s.code; }
+    return sectors[sectors.length - 1].code;
+  };
+  // 切れ目の中心を一周の起点にすると、描画弧が 0°/360° の継ぎ目をまたがない。
+  const start = gaps[0].angle;
+  const STEP = 1.5;
+  let runStart = null, runCode = null;
+  const flush = (absEnd) => { if (runStart != null) { drawArcPiece(svg, i, runStart, absEnd, runCode, ring.r, sw); runStart = null; runCode = null; } };
+  for (let a = 0; a <= 360 + 1e-6; a += STEP) {
+    const ang = start + a;
+    const code = inGapAt(((ang % 360) + 360) % 360) ? null : codeAt(ang);
+    if (code !== runCode) { flush(ang); if (code != null) { runStart = ang; runCode = code; } }
+  }
+  flush(start + 360);
+  // セクター境界の目印（切れ目内の境界は描かない）。
+  if (ring.sectors && ring.sectors.length > 1) {
+    let acc = 0;
+    for (let s = 0; s < ring.sectors.length; s++) {
+      const ba = base + acc; acc += ring.sectors[s].span;
+      if (!inGapAt(((ba % 360) + 360) % 360)) drawSectorTick(svg, ba, ring.r, sw);
+    }
+  }
 }
 
 function render() {
@@ -751,33 +849,9 @@ function render() {
     }));
   }
 
-  // 環: 種類は2文字コード [内面][外面]。両面同じなら1本の帯、内外で違えば
-  //     帯を内半分/外半分に分けてそれぞれの面の色で描く（内外の違いを見せる）。
+  // 環を描く（通常環・セクター環を統一処理）。
   for (let i = 0; i < currentStage.rings.length; i++) {
-    const ring = currentStage.rings[i];
-    const sw = STROKE_RATIO * ring.r;
-    const gaps = gapList(ring);
-    const inner = ring.type[0], outer = ring.type[1];
-    const addArc = (radius, width, ch) => {
-      const path = el('path', {
-        d: ringPathD(CX, CY, radius, gaps),
-        fill: 'none',
-        stroke: faceColor(ch),
-        'stroke-width': width.toFixed(2),
-        'stroke-linecap': 'butt',
-        'stroke-opacity': faceOpacity(ch),
-        'data-ring': i,
-      });
-      path.style.cursor = 'pointer';
-      svg.appendChild(path);
-    };
-    if (inner === outer) {
-      addArc(ring.r, sw, inner);
-    } else {
-      const halfSw = sw / 2;
-      addArc(ring.r - halfSw / 2, halfSw, inner);   // 内側の半分
-      addArc(ring.r + halfSw / 2, halfSw, outer);   // 外側の半分
-    }
+    drawRing(svg, currentStage.rings[i], i);
   }
 
   // 選択環ガイド
@@ -874,11 +948,15 @@ function hideWinBanner() {
 }
 
 function faceName(ch) { return ch === 'M' ? 'ミラー' : ch === 'P' ? 'プリズム' : '吸収'; }
+function codeName(code) {
+  // 2文字コード [内面][外面] の表示名。両面同じなら短く、違えば「内◯・外◯」。
+  if (code[0] === code[1]) return code[0] === 'A' ? '壁' : faceName(code[0]);
+  return `内${faceName(code[0])}・外${faceName(code[1])}`;
+}
 function ringTypeLabel(r) {
-  // 2文字コード [内面][外面] から表示名を作る。両面同じなら短く、違えば「内◯・外◯」。
-  const inner = r.type[0], outer = r.type[1];
-  if (inner === outer) return inner === 'A' ? '通常壁' : faceName(inner);
-  return `内${faceName(inner)}・外${faceName(outer)}`;
+  if (r.sectors) return 'セクター環[' + r.sectors.map(s => codeName(s.code)).join('/') + ']';
+  if (r.type[0] === r.type[1]) return r.type[0] === 'A' ? '通常壁' : faceName(r.type[0]);
+  return `内${faceName(r.type[0])}・外${faceName(r.type[1])}`;
 }
 
 // コントロール行は「ステージ読み込み時に一度だけ構築」し、以後は数値と選択状態のみ更新する。
